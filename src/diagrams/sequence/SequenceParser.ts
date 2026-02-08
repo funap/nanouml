@@ -11,6 +11,8 @@ export class SequenceParser implements Parser {
         let lastMessageStep = -1;
         let lastMessageFrom = '';
         let lastMessageTo = '';
+        let lastMessageType: string = '';
+        let lastActivationStep = new Map<string, number>();
 
         for (let i = 0; i < lines.length; i++) {
             let line = lines[i];
@@ -117,15 +119,45 @@ export class SequenceParser implements Parser {
                 if (act === 'activate') {
                     if (name === lastMessageTo && lastMessageStep !== -1) {
                         diagram.activate(name, lastMessageStep, lastMessageStep, color);
+                        lastActivationStep.set(name, lastMessageStep);
                     } else {
-                        diagram.activate(name, undefined, undefined, color);
+                        const step = diagram.nextStep();
+                        diagram.activate(name, step, undefined, color);
+                        lastActivationStep.set(name, step);
                     }
                 } else if (act === 'deactivate') {
-                    // For deactivation on a separate line, we always want it to occupy its own step
-                    // to avoid "zero-length" activations.
-                    diagram.deactivate(name);
+                    // For deactivation on a separate line, we want it to align with the last message if applicable
+                    // but ONLY if the last message is strictly after the activation started.
+                    // Refined: align with return messages only if sender; align with arrows for both sender/receiver.
+                    let shouldAlign = false;
+                    if (lastMessageStep !== -1 && lastMessageStep > (lastActivationStep.get(name) ?? -1)) {
+                        if (lastMessageType === 'arrow') {
+                            shouldAlign = (name === lastMessageTo || name === lastMessageFrom);
+                        } else if (lastMessageType === 'dotted') {
+                            shouldAlign = (name === lastMessageFrom);
+                        }
+                    }
+
+                    if (shouldAlign) {
+                        diagram.deactivate(name, lastMessageStep);
+                    } else {
+                        diagram.deactivate(name, diagram.nextStep());
+                    }
                 } else if (act === 'destroy') {
-                    diagram.destroy(name, diagram.getCurrentStep());
+                    let shouldAlign = false;
+                    if (lastMessageStep !== -1 && lastMessageStep > (lastActivationStep.get(name) ?? -1)) {
+                        if (lastMessageType === 'arrow') {
+                            shouldAlign = (name === lastMessageTo || name === lastMessageFrom);
+                        } else if (lastMessageType === 'dotted') {
+                            shouldAlign = (name === lastMessageFrom);
+                        }
+                    }
+
+                    if (shouldAlign) {
+                        diagram.destroy(name, lastMessageStep);
+                    } else {
+                        diagram.destroy(name, diagram.nextStep());
+                    }
                 }
                 continue;
             }
@@ -198,9 +230,27 @@ export class SequenceParser implements Parser {
                     if (tag) {
                         diagram.addTaggedStep(tag, step);
                     }
+
+                    // Identify semantic sender and receiver for alignment logic
+                    // If target head is default/open/half/arrow-circle and start head is none, standard: from -> to
+                    // If start head is default/open/half/arrow-circle and target head is none, reversed: to -> from
+                    let semanticFrom = from;
+                    let semanticTo = to;
+
+                    const isHead = (h: ArrowHead) => ['default', 'open', 'half', 'arrow-circle'].includes(h);
+
+                    if (isHead(startHead) && !isHead(arrowHead)) {
+                        semanticFrom = to;
+                        semanticTo = from;
+                    } else if (isHead(arrowHead) && !isHead(startHead)) {
+                        semanticFrom = from;
+                        semanticTo = to;
+                    }
+
                     lastMessageStep = step;
-                    lastMessageFrom = from;
-                    lastMessageTo = to;
+                    lastMessageFrom = semanticFrom;
+                    lastMessageTo = semanticTo;
+                    lastMessageType = isDotted ? 'dotted' : 'arrow';
 
                     // Handle combined and single shorthands
                     if (shorthand === '++') {
@@ -213,6 +263,7 @@ export class SequenceParser implements Parser {
                             }
                         }
                         diagram.activate(to, step, step, autoActivColor);
+                        lastActivationStep.set(to, step);
                     } else if (shorthand === '--') {
                         diagram.deactivate(from, step, step);
                     } else if (shorthand === '--++') {
@@ -227,6 +278,7 @@ export class SequenceParser implements Parser {
                             }
                         }
                         diagram.activate(to, step, step, autoActivColor);
+                        lastActivationStep.set(to, step);
                     } else if (shorthand === '++--') {
                         // Activate sender, deactivate receiver (less common)
                         // Sanitize activation color
@@ -238,6 +290,7 @@ export class SequenceParser implements Parser {
                             }
                         }
                         diagram.activate(from, step, step, autoActivColor);
+                        lastActivationStep.set(from, step);
                         diagram.deactivate(to, step, step);
                     } else if (shorthand === '**') {
                         diagram.create(to, step);
