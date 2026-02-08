@@ -121,17 +121,11 @@ export class SequenceParser implements Parser {
                         diagram.activate(name, undefined, undefined, color);
                     }
                 } else if (act === 'deactivate') {
-                    if ((name === lastMessageTo || name === lastMessageFrom) && lastMessageStep !== -1) {
-                        diagram.deactivate(name, lastMessageStep);
-                    } else {
-                        diagram.deactivate(name);
-                    }
+                    // For deactivation on a separate line, we always want it to occupy its own step
+                    // to avoid "zero-length" activations.
+                    diagram.deactivate(name);
                 } else if (act === 'destroy') {
-                    if ((name === lastMessageTo || name === lastMessageFrom) && lastMessageStep !== -1) {
-                        diagram.destroy(name, lastMessageStep);
-                    } else {
-                        diagram.destroy(name, diagram.getCurrentStep());
-                    }
+                    diagram.destroy(name, diagram.getCurrentStep());
                 }
                 continue;
             }
@@ -220,10 +214,10 @@ export class SequenceParser implements Parser {
                         }
                         diagram.activate(to, step, step, autoActivColor);
                     } else if (shorthand === '--') {
-                        diagram.deactivate(from, step);
+                        diagram.deactivate(from, step, step);
                     } else if (shorthand === '--++') {
                         // Deactivate sender, activate receiver
-                        diagram.deactivate(from, step);
+                        diagram.deactivate(from, step, step);
                         // Sanitize activation color
                         if (autoActivColor && autoActivColor.startsWith('#')) {
                             const hexContent = autoActivColor.substring(1);
@@ -244,7 +238,7 @@ export class SequenceParser implements Parser {
                             }
                         }
                         diagram.activate(from, step, step, autoActivColor);
-                        diagram.deactivate(to, step);
+                        diagram.deactivate(to, step, step);
                     } else if (shorthand === '**') {
                         diagram.create(to, step);
                     } else if (shorthand === '!!') {

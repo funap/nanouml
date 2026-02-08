@@ -19,6 +19,7 @@ export interface Activation {
     endStep?: number;
     level: number;
     sourceStep?: number;
+    endSourceStep?: number;
     color?: string;
 }
 
@@ -260,18 +261,13 @@ export class SequenceDiagram implements Diagram {
         });
     }
 
-    deactivate(name: string, step?: number) {
+    deactivate(name: string, step: number = this.currentStep, sourceStep?: number) {
         this.addParticipant(name);
-
-        // Find the highest-level (innermost) active activation for this participant
-        const activeActivations = this.activations
-            .filter(a => a.participantName === name && a.endStep === undefined)
-            .sort((a, b) => b.level - a.level); // Highest level first (innermost to outermost)
-
-        if (activeActivations.length > 0) {
-            const firstActive = activeActivations[0];
-            // Use provided step or create a new one
-            firstActive.endStep = step !== undefined ? step : this.nextStep();
+        // Find the most recent unfinished activation
+        const lastActive = [...this.activations].reverse().find(a => a.participantName === name && a.endStep === undefined);
+        if (lastActive) {
+            lastActive.endStep = step;
+            lastActive.endSourceStep = sourceStep;
         }
     }
 

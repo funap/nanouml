@@ -370,11 +370,19 @@ export class LayoutEngine {
                     y += 25;
                 }
             }
-            const yEnd = stepY[a.endStep!];
+            let yEnd = stepY[a.endStep!];
+            if (a.endSourceStep !== undefined) {
+                const closeMsg = messages.find(m => m.step === a.endSourceStep);
+                if (closeMsg && closeMsg.from === a.participantName && closeMsg.to === a.participantName) {
+                    yEnd += 25;
+                }
+            }
+
             const minHeight = 5; // Minimum height to ensure activation is visible
+            const height = Math.max(minHeight, yEnd - y);
             return {
                 activation: a,
-                x, y, width: this.theme.activationWidth, height: Math.max(minHeight, yEnd - y)
+                x, y, width: this.theme.activationWidth, height
             };
         }).filter(a => a !== null) as ActivationLayout[];
     }
