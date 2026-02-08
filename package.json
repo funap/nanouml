@@ -8,7 +8,8 @@
   "scripts": {
     "type-check": "tsc --noEmit",
     "build": "npm run type-check && esbuild src/index.ts --bundle --outfile=dist/seeduml.js --platform=browser --format=iife --global-name=seeduml && esbuild src/index.ts --bundle --minify --outfile=dist/seeduml.min.js --platform=browser --format=iife --global-name=seeduml && esbuild src/index.ts --bundle --outfile=dist/seeduml.esm.mjs --platform=browser --format=esm && esbuild src/index.ts --bundle --minify --outfile=dist/seeduml.esm.min.mjs --platform=browser --format=esm",
-    "test": "vitest run"
+    "test": "vitest run",
+    "deploy": "gh-pages -d dist"
   },
   "keywords": [
     "plantuml",
@@ -20,6 +21,7 @@
   "license": "MIT",
   "devDependencies": {
     "esbuild": "^0.27.2",
+    "gh-pages": "^6.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"
   }
