@@ -23,7 +23,9 @@ var seeduml = (() => {
   __export(index_exports, {
     default: () => index_default,
     initialize: () => initialize,
+    render: () => render,
     renderAll: () => renderAll,
+    renderComponentDiagram: () => renderComponentDiagram,
     renderSequenceDiagram: () => renderSequenceDiagram
   });
 
@@ -1662,6 +1664,1267 @@ var seeduml = (() => {
     }
   };
 
+  // src/diagrams/component/ComponentDiagram.ts
+  var ComponentDiagram = class {
+    constructor() {
+      this.type = "component";
+      this.components = [];
+      this.relationships = [];
+      this.notes = [];
+    }
+    addComponent(name, type, label, parentId, color) {
+      let component = this.components.find((c) => c.name === name);
+      if (!component) {
+        component = { name, type, label: label || name, isVisible: true, parentId, color };
+        this.components.push(component);
+      } else {
+        if (label) component.label = label;
+        if (parentId) component.parentId = parentId;
+        if (color) component.color = color;
+        if (type !== "component" && component.type === "component") component.type = type;
+      }
+      return component;
+    }
+    addRelationship(from, to, type = "solid", label, direction, showArrowHead = true, _parentId) {
+      this.relationships.push({ from, to, type, label, direction, showArrowHead });
+    }
+    addNote(text, position, linkedTo, alias) {
+      const id = `note_${this.notes.length}`;
+      this.notes.push({ text, position, linkedTo, id, alias });
+    }
+    findComponent(name) {
+      return this.components.find((c) => c.name === name || c.alias === name);
+    }
+  };
+
+  // src/diagrams/component/ComponentParser.ts
+  var ComponentParser = class {
+    parse(content) {
+      const diagram = new ComponentDiagram();
+      const lines = content.split("\n");
+      const explicitDefinitions = /* @__PURE__ */ new Set();
+      const noteAliases = /* @__PURE__ */ new Set();
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line || line.startsWith("'") || line.startsWith("@")) continue;
+        const componentMatch = line.match(/^component\s+(?:\[(.*?)\]|(".*?"|\S+))(?:\s+as\s+(\S+))?(?:\s+(#\w+))?(?:\s*\[)?$/i);
+        if (componentMatch) {
+          explicitDefinitions.add(componentMatch[3] || componentMatch[1] || (componentMatch[2] ? componentMatch[2].replace(/^"(.*)"$/, "$1") : ""));
+          continue;
+        }
+        const interfaceMatch = line.match(/^interface\s+(".*?"|\S+)(?:\s+as\s+(\S+))?(?:\s+(#\w+))?(?:\s*\[)?$/i);
+        if (interfaceMatch) {
+          explicitDefinitions.add(interfaceMatch[2] || interfaceMatch[1].replace(/^"(.*)"$/, "$1"));
+          continue;
+        }
+        const circleMatch = line.match(/^\(\)\s+(".*?"|\S+)(?:\s+as\s+(\S+))?(?:\s+(#\w+))?(?:\s*\[)?$/);
+        if (circleMatch) {
+          explicitDefinitions.add(circleMatch[2] || circleMatch[1].replace(/^"(.*)"$/, "$1"));
+          continue;
+        }
+        const bracketMatch = line.match(/^\[([^\]]+)\](?:\s+as\s+(\S+))?(?:\s+(#\w+))?(?:\s*\[)?$/);
+        if (bracketMatch) {
+          explicitDefinitions.add(bracketMatch[2] || bracketMatch[1]);
+          continue;
+        }
+        const portMatch = line.match(/^(port|portin|portout)\s+(".*?"|\S+)(?:\s+as\s+(\S+))?$/i);
+        if (portMatch) {
+          explicitDefinitions.add(portMatch[3] || portMatch[2].replace(/^"(.*)"$/, "$1"));
+          continue;
+        }
+        const floatingNoteMatch = line.match(/^note\s+as\s+(\S+)$/i);
+        if (floatingNoteMatch) {
+          noteAliases.add(floatingNoteMatch[1]);
+          continue;
+        }
+      }
+      let pendingNote = null;
+      let parentStack = [];
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+        if (!line || line.startsWith("'") || line.startsWith("@")) continue;
+        if (pendingNote) {
+          if (line.endsWith("]")) {
+            if (pendingNote.isDescription && pendingNote.linkedTo) {
+              const description = pendingNote.text.join("\n");
+              const comp = diagram.findComponent(pendingNote.linkedTo);
+              if (comp) {
+                comp.label = description;
+              }
+              pendingNote = null;
+            } else if (line.toLowerCase() === "end note") {
+              diagram.addNote(pendingNote.text.join("\n"), pendingNote.position, pendingNote.linkedTo, pendingNote.alias);
+              pendingNote = null;
+            } else {
+              pendingNote.text.push(line);
+            }
+          } else if (line.toLowerCase() === "end note" && !pendingNote.isDescription) {
+            diagram.addNote(pendingNote.text.join("\n"), pendingNote.position, pendingNote.linkedTo, pendingNote.alias);
+            pendingNote = null;
+          } else {
+            if (pendingNote.isDescription && line.endsWith("]")) {
+              const content2 = line.substring(0, line.length - 1).trim();
+              if (content2) pendingNote.text.push(content2);
+              const description = pendingNote.text.join("\n");
+              const comp = diagram.findComponent(pendingNote.linkedTo);
+              if (comp) {
+                comp.label = description;
+              }
+              pendingNote = null;
+            } else {
+              pendingNote.text.push(line);
+            }
+          }
+          continue;
+        }
+        const currentParentId = parentStack.length > 0 ? parentStack[parentStack.length - 1] : void 0;
+        const componentMatch = line.match(/^component\s+(?:\[(.*?)\]|(".*?"|\S+))(?:\s+as\s+(\S+))?(?:\s+(#\w+))?(?:\s*\[)?$/i);
+        if (componentMatch) {
+          const bracketName = componentMatch[1];
+          const simpleName = componentMatch[2];
+          const alias = componentMatch[3];
+          const color = componentMatch[4];
+          const label = bracketName || (simpleName ? simpleName.replace(/^"(.*)"$/, "$1") : "");
+          const id = alias || label;
+          diagram.addComponent(id, "component", label, currentParentId, this.parseColor(color));
+          if (line.trim().endsWith("[")) {
+            pendingNote = { text: [], linkedTo: id, alias: void 0, isDescription: true };
+          }
+          continue;
+        }
+        const interfaceMatch = line.match(/^interface\s+(".*?"|\S+)(?:\s+as\s+(\S+))?(?:\s+(#\w+))?(?:\s*\[)?$/i);
+        if (interfaceMatch) {
+          const name = interfaceMatch[1].replace(/^"(.*)"$/, "$1");
+          const alias = interfaceMatch[2];
+          const color = interfaceMatch[3];
+          diagram.addComponent(alias || name, "interface", name, currentParentId, this.parseColor(color));
+          if (line.trim().endsWith("[")) {
+            pendingNote = { text: [], linkedTo: alias || name, alias: void 0, isDescription: true };
+          }
+          continue;
+        }
+        const circleMatch = line.match(/^\(\)\s+(".*?"|\S+)(?:\s+as\s+(\S+))?(?:\s+(#\w+))?(?:\s*\[)?$/);
+        if (circleMatch) {
+          const name = circleMatch[1].replace(/^"(.*)"$/, "$1");
+          const alias = circleMatch[2];
+          const color = circleMatch[3];
+          diagram.addComponent(alias || name, "interface", name, currentParentId, this.parseColor(color));
+          continue;
+        }
+        const bracketMatch = line.match(/^\[([^\]]+)\](?:\s+as\s+(\S+))?(?:\s+(#\w+))?(?:\s*\[)?$/);
+        if (bracketMatch) {
+          const label = bracketMatch[1];
+          const alias = bracketMatch[2];
+          const color = bracketMatch[3];
+          const id = alias || label;
+          diagram.addComponent(id, "component", label, currentParentId, this.parseColor(color));
+          if (line.trim().endsWith("[")) {
+            pendingNote = { text: [], linkedTo: id, alias: void 0, isDescription: true };
+          }
+          continue;
+        }
+        const groupStartMatch = line.match(/^(package|node|folder|frame|cloud|database|component|interface)(?:\s+(".*?"|\S+))?\s*\{$/i);
+        if (groupStartMatch) {
+          const type = groupStartMatch[1].toLowerCase();
+          const nameRaw = groupStartMatch[2];
+          let groupId = nameRaw ? nameRaw.replace(/^"(.*)"$/, "$1") : type;
+          if (!nameRaw) {
+            const count = diagram.components.filter((c) => c.type === type).length;
+            groupId = `${type}_${count}_${i}`;
+            diagram.addComponent(groupId, type, "", currentParentId);
+          } else {
+            diagram.addComponent(groupId, type, groupId, currentParentId);
+          }
+          parentStack.push(groupId);
+          continue;
+        }
+        if (line === "}") {
+          parentStack.pop();
+          continue;
+        }
+        const portMatch = line.match(/^(port|portin|portout)\s+(".*?"|\S+)(?:\s+as\s+(\S+))?$/i);
+        if (portMatch) {
+          const type = portMatch[1].toLowerCase();
+          const name = portMatch[2].replace(/^"(.*)"$/, "$1");
+          const alias = portMatch[3];
+          let componentType = "port";
+          if (type === "portin") componentType = "portin";
+          if (type === "portout") componentType = "portout";
+          diagram.addComponent(alias || name, componentType, name, currentParentId);
+          continue;
+        }
+        const componentRef = `(?:\\[([^\\]]+)\\]|(".*?"|[^\\s-]+))`;
+        const arrowRef = `([-.]+[^[\\]\\s]*)`;
+        const separator = `(?:\\s+|(?<=[^\\s])(?=[-.])|(?<=[-.])(?=[^\\s]))`;
+        const relRegex = new RegExp(`^${componentRef}${separator}${arrowRef}${separator}${componentRef}(?:\\s*:\\s*(.*))?$`);
+        const relMatch = line.match(relRegex);
+        if (relMatch) {
+          const id1Raw = relMatch[1] || relMatch[2];
+          const isId1Bracketed = !!relMatch[1];
+          const arrow = relMatch[3];
+          const id2Raw = relMatch[4] || relMatch[5];
+          const isId2Bracketed = !!relMatch[4];
+          const label = relMatch[6];
+          const id1 = id1Raw.replace(/^"(.*)"$/, "$1");
+          const id2 = id2Raw.replace(/^"(.*)"$/, "$1");
+          if (!diagram.components.some((c) => c.name === id1) && !noteAliases.has(id1)) {
+            const type2 = isId1Bracketed ? "component" : "interface";
+            diagram.addComponent(id1, type2, id1, currentParentId);
+          }
+          if (!diagram.components.some((c) => c.name === id2) && !noteAliases.has(id2)) {
+            const type2 = isId2Bracketed ? "component" : "interface";
+            diagram.addComponent(id2, type2, id2, currentParentId);
+          }
+          let type = "solid";
+          if (arrow.includes("..")) type = "dashed";
+          else if (arrow.includes("--")) type = "solid";
+          let direction = void 0;
+          if (arrow.includes("left") || arrow.includes("le")) direction = "left";
+          else if (arrow.includes("right") || arrow.includes("ri")) direction = "right";
+          else if (arrow.includes("up")) direction = "up";
+          else if (arrow.includes("down") || arrow.includes("do")) direction = "down";
+          if (!direction) {
+            const stripped = arrow.replace(/[<>]/g, "");
+            const dashMatch = stripped.match(/(-+|\.+)/);
+            if (dashMatch) {
+              const len = dashMatch[1].length;
+              direction = len >= 2 ? "down" : "right";
+            }
+          }
+          const hasArrowHead = arrow.includes(">");
+          diagram.addRelationship(id1, id2, type, label, direction, hasArrowHead, currentParentId);
+          continue;
+        }
+        const floatingNoteMatch = line.match(/^note\s+as\s+(\S+)$/i);
+        if (floatingNoteMatch) {
+          const alias = floatingNoteMatch[1];
+          pendingNote = { text: [], alias };
+          continue;
+        }
+        const noteMatch = line.match(/^note\s+(left|right|top|bottom)\s+of\s+(?:\[(.*?)\]|(".*?"|\S+))(?:\s*:\s*(.*))?$/i);
+        if (noteMatch) {
+          const pos = noteMatch[1].toLowerCase();
+          const targetDisplay = noteMatch[2] || noteMatch[3];
+          const targetId = targetDisplay.replace(/^"(.*)"$/, "$1");
+          const isBracketed = !!noteMatch[2];
+          if (!diagram.findComponent(targetId)) {
+            diagram.addComponent(targetId, isBracketed ? "component" : "interface");
+          }
+          const text = noteMatch[4];
+          if (text) {
+            diagram.addNote(text, pos, targetId);
+          } else {
+            pendingNote = { text: [], position: pos, linkedTo: targetId };
+          }
+          continue;
+        }
+      }
+      return diagram;
+    }
+    parseColor(color) {
+      if (!color) return void 0;
+      if (color.startsWith("#")) {
+        const hexContent = color.substring(1);
+        const isHex = /^([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(hexContent);
+        if (isHex) {
+          return color;
+        } else {
+          return hexContent;
+        }
+      }
+      return color;
+    }
+  };
+
+  // src/diagrams/component/ComponentLayout.ts
+  var ComponentLayout = class {
+    // Map note alias/id to position
+    constructor(diagram, theme) {
+      this.diagram = diagram;
+      this.theme = theme;
+      this.layoutMap = /* @__PURE__ */ new Map();
+      this.gridCells = /* @__PURE__ */ new Map();
+      this.noteLayoutMap = /* @__PURE__ */ new Map();
+    }
+    calculateLayout() {
+      this.layoutMap.clear();
+      const roots = this.diagram.components.filter((c) => !c.parentId);
+      this.layoutGroup(roots, 0, 0);
+      const componentNodes = [];
+      this.layoutMap.forEach((rect, id) => {
+        const comp = this.diagram.components.find((c) => c.name === id);
+        if (comp) {
+          componentNodes.push({ ...rect, component: comp });
+        }
+      });
+      this.straightenVerticalLines(componentNodes);
+      componentNodes.forEach((node) => {
+        const rect = this.layoutMap.get(node.component.name);
+        if (rect) {
+          node.x = rect.x;
+          node.y = rect.y;
+        }
+      });
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      componentNodes.forEach((node) => {
+        minX = Math.min(minX, node.x);
+        minY = Math.min(minY, node.y);
+        maxX = Math.max(maxX, node.x + node.width);
+        maxY = Math.max(maxY, node.y + node.height);
+      });
+      const notes = this.layoutNotes(componentNodes);
+      notes.forEach((n) => {
+        minX = Math.min(minX, n.x);
+        minY = Math.min(minY, n.y);
+        maxX = Math.max(maxX, n.x + n.width);
+        maxY = Math.max(maxY, n.y + n.height);
+      });
+      const offsetX = this.theme.padding - minX;
+      const offsetY = this.theme.padding - minY;
+      if (offsetX !== 0 || offsetY !== 0) {
+        componentNodes.forEach((node) => {
+          node.x += offsetX;
+          node.y += offsetY;
+          const rect = this.layoutMap.get(node.component.name);
+          rect.x = node.x;
+          rect.y = node.y;
+        });
+        notes.forEach((note) => {
+          note.x += offsetX;
+          note.y += offsetY;
+        });
+        maxX += offsetX;
+        maxY += offsetY;
+      }
+      const relationships = this.diagram.relationships.map((r) => this.routeRelationship(r));
+      return {
+        components: componentNodes,
+        relationships,
+        notes,
+        width: maxX + this.theme.padding,
+        height: maxY + this.theme.padding
+      };
+    }
+    straightenVerticalLines(nodes) {
+      const vRels = this.diagram.relationships.filter((r) => !r.direction || r.direction === "down" || r.direction === "up");
+      if (vRels.length === 0) return;
+      for (let iter = 0; iter < 50; iter++) {
+        const shifts = /* @__PURE__ */ new Map();
+        vRels.forEach((rel) => {
+          const fromRect = this.layoutMap.get(rel.from);
+          const toRect = this.layoutMap.get(rel.to);
+          if (!fromRect || !toRect) return;
+          const fromX = fromRect.x + fromRect.width / 2;
+          const toX = toRect.x + toRect.width / 2;
+          const error = toX - fromX;
+          if (Math.abs(error) < 0.1) return;
+          const outgoingVRels = vRels.filter((r) => r.from === rel.from);
+          if (outgoingVRels.length > 1) return;
+          const incomingVRels = vRels.filter((r) => r.to === rel.to);
+          if (incomingVRels.length > 1) return;
+          const lcp = this.findLowestCommonParent(rel.from, rel.to);
+          const nodeFrom = this.getAncestorUnder(rel.from, lcp);
+          const nodeTo = this.getAncestorUnder(rel.to, lcp);
+          if (nodeFrom && nodeTo && nodeFrom !== nodeTo) {
+            if (!shifts.has(nodeFrom)) shifts.set(nodeFrom, { totalShift: 0, count: 0 });
+            if (!shifts.has(nodeTo)) shifts.set(nodeTo, { totalShift: 0, count: 0 });
+            const sFrom = shifts.get(nodeFrom);
+            const sTo = shifts.get(nodeTo);
+            sFrom.totalShift += error / 2;
+            sFrom.count++;
+            sTo.totalShift -= error / 2;
+            sTo.count++;
+          }
+        });
+        if (shifts.size === 0) break;
+        let moved = false;
+        shifts.forEach((val, name) => {
+          const avgShift = val.totalShift / val.count;
+          if (Math.abs(avgShift) < 0.1) return;
+          const rect = this.layoutMap.get(name);
+          if (rect) {
+            rect.x += avgShift;
+            moved = true;
+            const cell = this.gridCells.get(name);
+            if (cell) {
+              cell.x += avgShift;
+              this.gridCells.set(name, cell);
+            }
+            const children = this.diagram.components.filter((c) => c.parentId === name);
+            if (children.length > 0) {
+              this.shiftChildren(children, avgShift, 0);
+            }
+          }
+        });
+        if (!moved) break;
+      }
+    }
+    findLowestCommonParent(name1, name2) {
+      const path1 = this.getAncestorPath(name1);
+      const path2 = this.getAncestorPath(name2);
+      let lcp = void 0;
+      for (let i = 0; i < Math.min(path1.length, path2.length); i++) {
+        if (path1[i] === path2[i]) {
+          lcp = path1[i];
+        } else {
+          break;
+        }
+      }
+      return lcp;
+    }
+    getAncestorPath(name) {
+      const comp = this.diagram.components.find((c) => c.name === name);
+      if (comp && comp.parentId) {
+        return [...this.getAncestorPath(comp.parentId), comp.parentId];
+      }
+      return [];
+    }
+    getAncestorUnder(name, parentName) {
+      const comp = this.diagram.components.find((c) => c.name === name);
+      if (comp && comp.parentId !== parentName) {
+        return this.getAncestorUnder(comp.parentId, parentName);
+      }
+      return name;
+    }
+    getTopLevelAncestor(name) {
+      const comp = this.diagram.components.find((c) => c.name === name);
+      if (comp && comp.parentId) {
+        return this.getTopLevelAncestor(comp.parentId);
+      }
+      return name;
+    }
+    layoutGroup(components, startX, startY) {
+      if (components.length === 0) {
+        return { x: startX, y: startY, width: 0, height: 0 };
+      }
+      const sizeMap = /* @__PURE__ */ new Map();
+      components.forEach((comp) => {
+        let width = this.theme.componentWidth;
+        let height = this.theme.componentHeight;
+        if (comp.type === "interface") {
+          width = this.theme.interfaceRadius * 2;
+          height = this.theme.interfaceRadius * 2;
+          const label = comp.label || comp.name;
+          const textWidth = label.length * 8;
+          width = Math.max(width, textWidth);
+          height += 20;
+        } else {
+          const allChildren = this.diagram.components.filter((c) => c.parentId === comp.name);
+          const ports = allChildren.filter((c) => c.type === "port" || c.type === "portin" || c.type === "portout");
+          const contentChildren = allChildren.filter((c) => c.type !== "port" && c.type !== "portin" && c.type !== "portout");
+          if (contentChildren.length > 0) {
+            const childrenBounds = this.layoutGroup(contentChildren, 0, 0);
+            width = childrenBounds.width + this.theme.packagePadding * 2;
+            height = childrenBounds.height + this.theme.packagePadding * 2 + 30;
+          } else {
+            const label = comp.label || comp.name;
+            const lines = label.split(/\\n|\n/);
+            const maxLineLen = Math.max(...lines.map((l) => l.length));
+            width = Math.max(width, maxLineLen * 9 + 20);
+            height = Math.max(height, lines.length * 20 + 20);
+          }
+        }
+        sizeMap.set(comp.name, { width, height });
+      });
+      const compNames = new Set(components.map((c) => c.name));
+      const gridPos = /* @__PURE__ */ new Map();
+      const descendantToAncestor = /* @__PURE__ */ new Map();
+      components.forEach((comp) => {
+        descendantToAncestor.set(comp.name, comp.name);
+        const descendants = this.getAllDescendants(comp.name);
+        descendants.forEach((d) => descendantToAncestor.set(d, comp.name));
+      });
+      const relevantRels = [];
+      const seen = /* @__PURE__ */ new Set();
+      this.diagram.relationships.forEach((r) => {
+        const ancestorFrom = descendantToAncestor.get(r.from);
+        const ancestorTo = descendantToAncestor.get(r.to);
+        if (ancestorFrom && ancestorTo && ancestorFrom !== ancestorTo) {
+          const key = `${ancestorFrom}->${ancestorTo}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            relevantRels.push({
+              from: ancestorFrom,
+              to: ancestorTo,
+              direction: r.direction || "down"
+            });
+          }
+        }
+      });
+      if (relevantRels.length > 0) {
+        const adj = /* @__PURE__ */ new Map();
+        relevantRels.forEach((r) => {
+          const dir = r.direction || "down";
+          if (!adj.has(r.from)) adj.set(r.from, []);
+          adj.get(r.from).push({ target: r.to, direction: dir });
+          if (!adj.has(r.to)) adj.set(r.to, []);
+          const revDir = dir === "down" ? "up" : dir === "up" ? "down" : dir === "right" ? "left" : "right";
+          adj.get(r.to).push({ target: r.from, direction: revDir });
+        });
+        const queue = [];
+        const roots = components.filter((c) => !relevantRels.some((r) => r.to === c.name));
+        const startNode = roots.length > 0 ? roots[0].name : relevantRels[0].from;
+        gridPos.set(startNode, { row: 0, col: 0 });
+        queue.push(startNode);
+        const visited = /* @__PURE__ */ new Set();
+        while (queue.length > 0) {
+          const current = queue.shift();
+          if (visited.has(current)) continue;
+          visited.add(current);
+          const currentPos = gridPos.get(current);
+          const neighbors = adj.get(current) || [];
+          const byDir = /* @__PURE__ */ new Map();
+          neighbors.forEach((n) => {
+            if (!gridPos.has(n.target)) {
+              if (!byDir.has(n.direction)) byDir.set(n.direction, []);
+              byDir.get(n.direction).push(n.target);
+            }
+          });
+          byDir.forEach((targets, dir) => {
+            targets.forEach((target, i) => {
+              let row = currentPos.row;
+              let col = currentPos.col;
+              const offset = targets.length === 1 ? 0 : i - (targets.length - 1) / 2;
+              switch (dir) {
+                case "down":
+                  row++;
+                  col += Math.round(offset * 1.5);
+                  break;
+                case "up":
+                  row--;
+                  col += Math.round(offset * 1.5);
+                  break;
+                case "right":
+                  col++;
+                  row += Math.round(offset * 1.5);
+                  break;
+                case "left":
+                  col--;
+                  row += Math.round(offset * 1.5);
+                  break;
+              }
+              const isTaken = (r, c) => {
+                for (const p of gridPos.values()) if (p.row === r && p.col === c) return true;
+                return false;
+              };
+              while (isTaken(row, col)) {
+                if (dir === "down" || dir === "up") col++;
+                else row++;
+              }
+              gridPos.set(target, { row, col });
+              queue.push(target);
+            });
+          });
+        }
+      }
+      const unpositioned = components.filter((c) => !gridPos.has(c.name));
+      if (unpositioned.length > 0) {
+        let maxRow2 = -1;
+        gridPos.forEach((pos) => maxRow2 = Math.max(maxRow2, pos.row));
+        const startRow = maxRow2 + 1;
+        const cols = Math.ceil(Math.sqrt(unpositioned.length));
+        unpositioned.forEach((comp, i) => {
+          gridPos.set(comp.name, {
+            row: startRow + Math.floor(i / cols),
+            col: i % cols
+          });
+        });
+      }
+      components.forEach((comp) => {
+        const rels = relevantRels.filter((r) => r.from === comp.name && r.direction === "down");
+        if (rels.length > 0) {
+          const pos = gridPos.get(comp.name);
+          if (pos) {
+            const childrenCols = rels.map((r) => gridPos.get(r.to)?.col).filter((c) => c !== void 0);
+            if (childrenCols.length > 0) {
+              const avgCol = childrenCols.reduce((a, b) => a + b, 0) / childrenCols.length;
+              pos.col = Math.round(avgCol);
+            }
+          }
+        }
+      });
+      const normalizeAndResolve = () => {
+        let minR = Infinity, minC = Infinity;
+        gridPos.forEach((p) => {
+          minR = Math.min(minR, p.row);
+          minC = Math.min(minC, p.col);
+        });
+        gridPos.forEach((p) => {
+          p.row -= minR;
+          p.col -= minC;
+        });
+        const sorted = Array.from(gridPos.keys()).sort((a, b) => {
+          const pa = gridPos.get(a), pb = gridPos.get(b);
+          return pa.row - pb.row || pa.col - pb.col;
+        });
+        const occupied = /* @__PURE__ */ new Set();
+        sorted.forEach((name) => {
+          const pos = gridPos.get(name);
+          let key = `${pos.row},${pos.col}`;
+          while (occupied.has(key)) {
+            pos.col++;
+            key = `${pos.row},${pos.col}`;
+          }
+          occupied.add(key);
+        });
+      };
+      normalizeAndResolve();
+      let maxRow = 0, maxCol = 0;
+      gridPos.forEach((pos) => {
+        maxRow = Math.max(maxRow, pos.row);
+        maxCol = Math.max(maxCol, pos.col);
+      });
+      const colWidths = new Array(maxCol + 1).fill(0);
+      const rowHeights = new Array(maxRow + 1).fill(0);
+      gridPos.forEach((pos, name) => {
+        const size = sizeMap.get(name);
+        colWidths[pos.col] = Math.max(colWidths[pos.col], size.width);
+        rowHeights[pos.row] = Math.max(rowHeights[pos.row], size.height);
+      });
+      const colStarts = [startX];
+      for (let c = 1; c <= maxCol; c++) {
+        colStarts[c] = colStarts[c - 1] + colWidths[c - 1] + this.theme.componentGapX;
+      }
+      const rowStarts = [startY];
+      for (let r = 1; r <= maxRow; r++) {
+        rowStarts[r] = rowStarts[r - 1] + rowHeights[r - 1] + this.theme.componentGapY;
+      }
+      console.log("--- Grid Layout Details ---");
+      console.log("Col Widths:", colWidths);
+      console.log("Col Starts:", colStarts);
+      console.log("Row Heights:", rowHeights);
+      console.log("Row Starts:", rowStarts);
+      components.forEach((comp) => {
+        const pos = gridPos.get(comp.name);
+        const size = sizeMap.get(comp.name);
+        const cellX = colStarts[pos.col];
+        const cellY = rowStarts[pos.row];
+        const cellW = colWidths[pos.col];
+        const cellH = rowHeights[pos.row];
+        const posX = cellX + (cellW - size.width) / 2;
+        const posY = cellY + (cellH - size.height) / 2;
+        this.layoutMap.set(comp.name, {
+          x: posX,
+          y: posY,
+          width: size.width,
+          height: size.height
+        });
+        this.gridCells.set(comp.name, { x: cellX, w: cellW });
+      });
+      components.forEach((comp) => {
+        const size = sizeMap.get(comp.name);
+        const rect = this.layoutMap.get(comp.name);
+        const posX = rect.x;
+        const posY = rect.y;
+        const allChildren = this.diagram.components.filter((c) => c.parentId === comp.name);
+        const contentChildren = allChildren.filter((c) => c.type !== "port" && c.type !== "portin" && c.type !== "portout");
+        if (contentChildren.length > 0) {
+          this.shiftChildren(contentChildren, posX + this.theme.packagePadding, posY + 30 + this.theme.packagePadding);
+        }
+        const ports = allChildren.filter((c) => c.type === "port" || c.type === "portin" || c.type === "portout");
+        if (ports.length > 0) {
+          this.layoutPorts(comp, ports, posX, posY, size.width, size.height);
+        }
+      });
+      const totalWidth = colStarts[maxCol] + colWidths[maxCol] - startX;
+      const totalHeight = rowStarts[maxRow] + rowHeights[maxRow] - startY;
+      return {
+        x: startX,
+        y: startY,
+        width: totalWidth,
+        height: totalHeight
+      };
+    }
+    shiftChildren(children, dx, dy) {
+      children.forEach((child) => {
+        const rect = this.layoutMap.get(child.name);
+        if (rect) {
+          rect.x += dx;
+          rect.y += dy;
+          this.layoutMap.set(child.name, rect);
+          const cell = this.gridCells.get(child.name);
+          if (cell) {
+            cell.x += dx;
+            this.gridCells.set(child.name, cell);
+          }
+          const grandChildren = this.diagram.components.filter((c) => c.parentId === child.name);
+          if (grandChildren.length > 0) {
+            this.shiftChildren(grandChildren, dx, dy);
+          }
+        }
+      });
+    }
+    /** Recursively get all descendant component names */
+    getAllDescendants(parentName) {
+      const result = [];
+      const children = this.diagram.components.filter((c) => c.parentId === parentName);
+      children.forEach((child) => {
+        result.push(child.name);
+        result.push(...this.getAllDescendants(child.name));
+      });
+      return result;
+    }
+    routeRelationship(rel) {
+      let fromRect = this.layoutMap.get(rel.from);
+      if (!fromRect) {
+        fromRect = this.noteLayoutMap.get(rel.from);
+      }
+      let toRect = this.layoutMap.get(rel.to);
+      if (!toRect) {
+        toRect = this.noteLayoutMap.get(rel.to);
+      }
+      if (!fromRect || !toRect) {
+        return { relationship: rel, path: [] };
+      }
+      const fromComp = this.diagram.components.find((c) => c.name === rel.from);
+      const toComp = this.diagram.components.find((c) => c.name === rel.to);
+      const startCenter = {
+        x: fromRect.x + fromRect.width / 2,
+        y: fromRect.y + fromRect.height / 2
+      };
+      const endCenter = {
+        x: toRect.x + toRect.width / 2,
+        y: toRect.y + toRect.height / 2
+      };
+      const startPad = fromComp?.type === "interface" ? this.theme.interfaceRadius + 2 : 5;
+      const endPad = toComp?.type === "interface" ? this.theme.interfaceRadius + 2 : 10;
+      const start = this.getIntersection(startCenter, endCenter, fromRect, startPad, fromComp?.type === "interface");
+      const end = this.getIntersection(endCenter, startCenter, toRect, endPad, toComp?.type === "interface");
+      return {
+        relationship: rel,
+        path: [start, end],
+        labelPosition: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - 10 }
+      };
+    }
+    getIntersection(center, target, rect, padding = 0, isCircle = false) {
+      const dx = target.x - center.x;
+      const dy = target.y - center.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist === 0) return center;
+      if (isCircle) {
+        const scale2 = padding / dist;
+        return {
+          x: center.x + dx * scale2,
+          y: center.y + dy * scale2
+        };
+      }
+      const w = rect.width / 2 + padding;
+      const h = rect.height / 2 + padding;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      let scale = 1;
+      if (absDx * h > absDy * w) {
+        scale = w / absDx;
+      } else {
+        scale = h / absDy;
+      }
+      return {
+        x: center.x + dx * scale,
+        y: center.y + dy * scale
+      };
+    }
+    layoutNotes(components) {
+      const layouts = [];
+      let defaultY = 0;
+      components.forEach((c) => defaultY = Math.max(defaultY, c.y + c.height));
+      defaultY += 50;
+      this.diagram.notes.forEach((note, i) => {
+        const lines = note.text.split("\n");
+        const width = Math.max(100, Math.max(...lines.map((l) => l.length * 8)) + 20);
+        const height = lines.length * 20 + 20;
+        let x = 0;
+        let y = defaultY + i * 60;
+        if (note.linkedTo) {
+          const target = components.find((c) => c.component.name === note.linkedTo);
+          if (target) {
+            const margin = 30;
+            if (note.position === "right") {
+              x = target.x + target.width + margin;
+              y = target.y + (target.height - height) / 2;
+            } else if (note.position === "left") {
+              x = target.x - width - margin;
+              y = target.y + (target.height - height) / 2;
+            } else if (note.position === "top") {
+              x = target.x + (target.width - width) / 2;
+              y = target.y - height - margin;
+            } else if (note.position === "bottom") {
+              x = target.x + (target.width - width) / 2;
+              y = target.y + target.height + margin;
+            } else {
+              x = target.x + target.width + margin;
+              y = target.y + (target.height - height) / 2;
+            }
+          }
+        }
+        const layout = {
+          note,
+          x,
+          y,
+          width,
+          height
+        };
+        layouts.push(layout);
+        const key = note.alias || note.id;
+        this.noteLayoutMap.set(key, { x, y, width, height });
+      });
+      return layouts;
+    }
+    layoutPorts(parent, ports, parentX, parentY, parentW, parentH) {
+      const portSegments = {
+        top: [],
+        bottom: [],
+        left: [],
+        right: []
+      };
+      ports.forEach((port) => {
+        const connections = this.diagram.relationships.filter((r) => r.from === port.name || r.to === port.name);
+        if (connections.length === 0) {
+          if (port.type === "portin") portSegments.left.push(port);
+          else if (port.type === "portout") portSegments.right.push(port);
+          else portSegments.left.push(port);
+          return;
+        }
+        let totalX = 0, totalY = 0, count = 0;
+        connections.forEach((rel) => {
+          const otherName = rel.from === port.name ? rel.to : rel.from;
+          let otherRect = this.layoutMap.get(otherName);
+          if (!otherRect) {
+          }
+          if (otherRect) {
+            totalX += otherRect.x + otherRect.width / 2;
+            totalY += otherRect.y + otherRect.height / 2;
+            count++;
+          }
+        });
+        if (count === 0) {
+          if (port.type === "portin") portSegments.left.push(port);
+          else if (port.type === "portout") portSegments.right.push(port);
+          else portSegments.left.push(port);
+          return;
+        }
+        const centerX = totalX / count;
+        const centerY = totalY / count;
+        const parentCenterX = parentX + parentW / 2;
+        const parentCenterY = parentY + parentH / 2;
+        const dx = centerX - parentCenterX;
+        const dy = centerY - parentCenterY;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          if (dx > 0) portSegments.right.push(port);
+          else portSegments.left.push(port);
+        } else {
+          if (dy > 0) portSegments.bottom.push(port);
+          else portSegments.top.push(port);
+        }
+      });
+      const portSize = 10;
+      const halfPort = portSize / 2;
+      const distribute = (list, edge) => {
+        if (list.length === 0) return;
+        const count = list.length;
+        const isVertical = edge === "left" || edge === "right";
+        const availableSpace = isVertical ? parentH : parentW;
+        const step = availableSpace / (count + 1);
+        list.forEach((p, i) => {
+          let x = 0, y = 0;
+          if (edge === "left") {
+            x = parentX - halfPort;
+            y = parentY + step * (i + 1) - halfPort;
+          } else if (edge === "right") {
+            x = parentX + parentW - halfPort;
+            y = parentY + step * (i + 1) - halfPort;
+          } else if (edge === "top") {
+            x = parentX + step * (i + 1) - halfPort;
+            y = parentY - halfPort;
+          } else if (edge === "bottom") {
+            x = parentX + step * (i + 1) - halfPort;
+            y = parentY + parentH - halfPort;
+          }
+          this.layoutMap.set(p.name, {
+            x,
+            y,
+            width: portSize,
+            height: portSize
+          });
+        });
+      };
+      distribute(portSegments.left, "left");
+      distribute(portSegments.right, "right");
+      distribute(portSegments.top, "top");
+      distribute(portSegments.bottom, "bottom");
+    }
+  };
+
+  // src/diagrams/component/ComponentTheme.ts
+  var defaultTheme2 = {
+    padding: 20,
+    componentWidth: 120,
+    componentHeight: 50,
+    interfaceRadius: 10,
+    componentGapX: 80,
+    componentGapY: 60,
+    fontSize: 13,
+    packagePadding: 20,
+    colors: {
+      defaultStroke: "#5a6270",
+      defaultFill: "#e8edf3",
+      interfaceFill: "#ffffff",
+      noteFill: "#fff9c4",
+      noteStroke: "#e0d86e",
+      line: "#5a6270",
+      text: "#2c3e50",
+      textLight: "#7f8c9b",
+      packageFill: "#ebf0f7",
+      packageStroke: "#7b8fa8",
+      nodeFill: "#ebf0f7",
+      folderFill: "#ebf0f7",
+      frameFill: "#ebf0f7",
+      cloudFill: "#ebf0f7",
+      databaseFill: "#ebf0f7",
+      componentIcon: "#7b8fa8"
+    },
+    fontFamily: "'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+  };
+
+  // src/diagrams/component/ComponentSVGRenderer.ts
+  var ComponentSVGRenderer = class {
+    constructor() {
+      this.theme = defaultTheme2;
+    }
+    render(diagram) {
+      if (diagram.type !== "component") {
+        throw new Error("ComponentSVGRenderer only supports component diagrams");
+      }
+      const componentDiagram = diagram;
+      this.layoutEngine = new ComponentLayout(componentDiagram, this.theme);
+      const layoutResult = this.layoutEngine.calculateLayout();
+      const width = Math.max(layoutResult.width, 100);
+      const height = Math.max(layoutResult.height, 100);
+      let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
+      svg += `<defs>
+            <marker id="comp-arrow-end" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
+                <polygon points="0,0 10,3.5 0,7" fill="${this.theme.colors.line}" />
+            </marker>
+            <marker id="comp-arrow-open" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
+                <polyline points="0,0 10,3.5 0,7" fill="none" stroke="${this.theme.colors.line}" stroke-width="1.5" />
+            </marker>
+            <filter id="comp-shadow" x="-4%" y="-4%" width="112%" height="112%">
+                <feDropShadow dx="1" dy="1" stdDeviation="2" flood-color="#00000020" />
+            </filter>
+        </defs>`;
+      const sortedComponents = [...layoutResult.components].sort((a, b) => {
+        const getDepth = (c) => {
+          let d = 0;
+          let parent = c.component.parentId;
+          while (parent) {
+            d++;
+            parent = componentDiagram.components.find((x) => x.name === parent)?.parentId;
+          }
+          return d;
+        };
+        return getDepth(a) - getDepth(b);
+      });
+      sortedComponents.forEach((node) => {
+        svg += this.renderComponentNode(node, componentDiagram, layoutResult);
+      });
+      layoutResult.notes.forEach((note) => {
+        svg += this.renderNote(note);
+      });
+      layoutResult.relationships.forEach((rel) => {
+        svg += this.renderRelationship(rel, componentDiagram);
+      });
+      svg += "</svg>";
+      return svg;
+    }
+    renderComponentNode(node, diagram, layoutResult) {
+      const { component } = node;
+      switch (component.type) {
+        case "interface":
+          return this.renderInterface(node);
+        case "package":
+          return this.renderPackage(node);
+        case "node":
+          return this.renderNode(node);
+        case "folder":
+          return this.renderFolder(node);
+        case "frame":
+          return this.renderFrame(node);
+        case "cloud":
+          return this.renderCloud(node);
+        case "database":
+          return this.renderDatabase(node);
+        case "port":
+        case "portin":
+        case "portout":
+          return this.renderPort(node, diagram, layoutResult);
+        case "component":
+        default:
+          return this.renderComponent(node, diagram);
+      }
+    }
+    /** SysML Component: Rectangle with component icon (two small rectangles on the left) */
+    renderComponent(node, diagram) {
+      const { x, y, width, height, component } = node;
+      const fill = component.color || this.theme.colors.defaultFill;
+      const stroke = this.theme.colors.defaultStroke;
+      const label = component.label || component.name;
+      const lines = label.split(/\\n|\n/);
+      const iconW = 14;
+      const iconH = 18;
+      const iconX = 6;
+      const iconY = 6;
+      const tabW = 8;
+      const tabH = 5;
+      const hasChildren = diagram.components.some((c) => c.parentId === component.name);
+      let textX = x + width / 2;
+      let textY = y + height / 2;
+      let anchor = "middle";
+      if (hasChildren) {
+        textY = y + 20;
+      }
+      return `
+            <g filter="url(#comp-shadow)">
+                <rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${fill}" stroke="${stroke}" stroke-width="1.5" rx="3" ry="3" />
+                <!-- SysML Component Icon: rectangle with two tabs -->
+                <rect x="${x + iconX}" y="${y + iconY}" width="${iconW}" height="${iconH}" fill="none" stroke="${this.theme.colors.componentIcon}" stroke-width="1.2" rx="1" />
+                <rect x="${x + iconX - tabW / 2}" y="${y + iconY + 3}" width="${tabW}" height="${tabH}" fill="${fill}" stroke="${this.theme.colors.componentIcon}" stroke-width="1" rx="0.5" />
+                <rect x="${x + iconX - tabW / 2}" y="${y + iconY + 10}" width="${tabW}" height="${tabH}" fill="${fill}" stroke="${this.theme.colors.componentIcon}" stroke-width="1" rx="0.5" />
+                <text x="${textX}" y="${textY}" text-anchor="${anchor}" dominant-baseline="middle" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
+                    ${lines.map((line, i) => `<tspan x="${textX}" dy="${i === 0 ? hasChildren ? 0 : -((lines.length - 1) * 0.6) + "em" : "1.2em"}">${this.escapeXml(line)}</tspan>`).join("")}
+                </text>
+            </g>
+        `;
+    }
+    /** SysML Interface: Lollipop (provided interface) */
+    renderInterface(node) {
+      const { x, y, width, height, component } = node;
+      const r = this.theme.interfaceRadius;
+      const cx = x + width / 2;
+      const cy = y + height / 2;
+      return `
+            <g>
+                <circle cx="${cx}" cy="${cy}" r="${r}" fill="${this.theme.colors.interfaceFill}" stroke="${this.theme.colors.defaultStroke}" stroke-width="1.5"/>
+                <text x="${cx}" y="${cy + r + 16}" text-anchor="middle" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
+                    ${this.escapeXml(component.label || component.name)}
+                </text>
+            </g>
+        `;
+    }
+    /** SysML Package: Rectangle with small tab (name compartment) on upper-left */
+    renderPackage(node) {
+      const { x, y, width, height, component } = node;
+      const label = component.label || component.name;
+      const tabH = 22;
+      const textW = label.length * 8 + 20;
+      const tabW = Math.min(Math.max(textW, 60), width * 0.6);
+      return `
+            <g filter="url(#comp-shadow)">
+                <!-- Package tab -->
+                <path d="M${x},${y + tabH} L${x},${y + 3} Q${x},${y} ${x + 3},${y} L${x + tabW - 5},${y} L${x + tabW},${y + tabH}" fill="${this.theme.colors.packageFill}" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
+                <!-- Package body -->
+                <rect x="${x}" y="${y + tabH}" width="${width}" height="${height - tabH}" fill="${this.theme.colors.packageFill}" fill-opacity="0.25" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" rx="1" />
+                <!-- Label in tab -->
+                <text x="${x + 10}" y="${y + 15}" text-anchor="start" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
+                    ${this.escapeXml(label)}
+                </text>
+            </g>
+        `;
+    }
+    /** SysML Node: 3D box (cube) – indicates execution environment */
+    renderNode(node) {
+      const { x, y, width, height, component } = node;
+      const label = component.label || component.name;
+      const d = 10;
+      return `
+            <g filter="url(#comp-shadow)">
+                <!-- Top face -->
+                <polygon points="${x},${y + d} ${x + d},${y} ${x + width + d},${y} ${x + width},${y + d}" fill="${this.theme.colors.nodeFill}" stroke="${this.theme.colors.packageStroke}" stroke-width="1.2" />
+                <!-- Right face -->
+                <polygon points="${x + width},${y + d} ${x + width + d},${y} ${x + width + d},${y + height} ${x + width},${y + height + d}" fill="${this.theme.colors.nodeFill}" fill-opacity="0.7" stroke="${this.theme.colors.packageStroke}" stroke-width="1.2" />
+                <!-- Front face -->
+                <rect x="${x}" y="${y + d}" width="${width}" height="${height}" fill="${this.theme.colors.nodeFill}" fill-opacity="0.35" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
+                <text x="${x + 10}" y="${y + d + 18}" text-anchor="start" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
+                    \xABnode\xBB ${this.escapeXml(label)}
+                </text>
+            </g>
+        `;
+    }
+    /** Folder: Rectangle with folder tab */
+    renderFolder(node) {
+      const { x, y, width, height, component } = node;
+      const label = component.label || component.name;
+      const tabH = 16;
+      const tabW = Math.min(60, width * 0.35);
+      return `
+            <g filter="url(#comp-shadow)">
+                <!-- Folder tab -->
+                <path d="M${x},${y + tabH} L${x},${y + 3} Q${x},${y} ${x + 3},${y} L${x + tabW - 8},${y} L${x + tabW},${y + tabH}" fill="${this.theme.colors.folderFill}" stroke="${this.theme.colors.defaultStroke}" stroke-width="1.3" />
+                <!-- Folder body -->
+                <rect x="${x}" y="${y + tabH}" width="${width}" height="${height - tabH}" fill="${this.theme.colors.folderFill}" fill-opacity="0.3" stroke="${this.theme.colors.defaultStroke}" stroke-width="1.3" rx="1" />
+                <text x="${x + 10}" y="${y + tabH + 18}" text-anchor="start" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
+                    ${this.escapeXml(label)}
+                </text>
+            </g>
+        `;
+    }
+    /** Frame: Rectangle with pentagon name tag in upper-left */
+    renderFrame(node) {
+      const { x, y, width, height, component } = node;
+      const label = component.label || component.name;
+      const tagW = Math.min(label.length * 8 + 24, width * 0.6);
+      const tagH = 22;
+      return `
+            <g filter="url(#comp-shadow)">
+                <!-- Frame body -->
+                <rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${this.theme.colors.frameFill}" fill-opacity="0.25" stroke="${this.theme.colors.defaultStroke}" stroke-width="1.5" rx="2" />
+                <!-- Pentagon name tag -->
+                <polygon points="${x},${y} ${x + tagW},${y} ${x + tagW},${y + tagH - 6} ${x + tagW - 6},${y + tagH} ${x},${y + tagH}" fill="${this.theme.colors.frameFill}" stroke="${this.theme.colors.defaultStroke}" stroke-width="1.3" />
+                <text x="${x + 8}" y="${y + 15}" text-anchor="start" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize - 1}">
+                    ${this.escapeXml(label)}
+                </text>
+            </g>
+        `;
+    }
+    /** Cloud: organic cloud shape */
+    renderCloud(node) {
+      const { x, y, width, height, component } = node;
+      const label = component.label || component.name;
+      const cx = width / 2;
+      const cy = height / 2;
+      const w = width;
+      const h = height;
+      return `
+            <g transform="translate(${x}, ${y})" filter="url(#comp-shadow)">
+                <path d="
+                    M${w * 0.25},${h * 0.7}
+                    C${w * 0.02},${h * 0.7} ${w * 0},${h * 0.45} ${w * 0.15},${h * 0.35}
+                    C${w * 0.1},${h * 0.15} ${w * 0.3},${h * 0.05} ${w * 0.45},${h * 0.2}
+                    C${w * 0.5},${h * 0.05} ${w * 0.75},${h * 0.05} ${w * 0.78},${h * 0.25}
+                    C${w * 1},${h * 0.2} ${w * 1.02},${h * 0.5} ${w * 0.85},${h * 0.6}
+                    C${w * 0.95},${h * 0.75} ${w * 0.85},${h * 0.85} ${w * 0.7},${h * 0.78}
+                    C${w * 0.6},${h * 0.9} ${w * 0.4},${h * 0.9} ${w * 0.25},${h * 0.7}
+                    Z
+                " fill="${this.theme.colors.cloudFill}" fill-opacity="0.5" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
+                ${label ? `<text x="${cx}" y="${cy + 5}" text-anchor="middle" dominant-baseline="middle" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
+                    ${this.escapeXml(label)}
+                </text>` : ""}
+            </g>
+        `;
+    }
+    /** Database: Cylinder shape */
+    renderDatabase(node) {
+      const { x, y, width, height, component } = node;
+      const label = component.label || component.name;
+      const ry = 12;
+      return `
+            <g transform="translate(${x}, ${y})" filter="url(#comp-shadow)">
+                <!-- Cylinder body -->
+                <rect x="0" y="${ry}" width="${width}" height="${height - ry * 2}" fill="${this.theme.colors.databaseFill}" fill-opacity="0.35" stroke="none" />
+                <!-- Side lines -->
+                <line x1="0" y1="${ry}" x2="0" y2="${height - ry}" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
+                <line x1="${width}" y1="${ry}" x2="${width}" y2="${height - ry}" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
+                <!-- Bottom ellipse -->
+                <ellipse cx="${width / 2}" cy="${height - ry}" rx="${width / 2}" ry="${ry}" fill="${this.theme.colors.databaseFill}" fill-opacity="0.35" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
+                <!-- Top ellipse (drawn last to overlay body) -->
+                <ellipse cx="${width / 2}" cy="${ry}" rx="${width / 2}" ry="${ry}" fill="${this.theme.colors.databaseFill}" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
+                ${label ? `<text x="${width / 2}" y="${ry + 20}" text-anchor="middle" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
+                    ${this.escapeXml(label)}
+                </text>` : ""}
+            </g>
+        `;
+    }
+    renderRelationship(rel, diagram) {
+      const { path, relationship } = rel;
+      if (path.length < 2) return "";
+      const start = path[0];
+      const end = path[path.length - 1];
+      const strokeDash = relationship.type === "dashed" ? "6,4" : relationship.type === "dotted" ? "2,3" : "none";
+      let markerEnd = "";
+      if (relationship.showArrowHead !== false) {
+        markerEnd = relationship.type === "dashed" ? "url(#comp-arrow-open)" : "url(#comp-arrow-end)";
+      }
+      let labelSvg = "";
+      if (rel.labelPosition && relationship.label) {
+        labelSvg = `
+                <rect x="${rel.labelPosition.x - relationship.label.length * 3.5 - 4}" y="${rel.labelPosition.y - 10}" width="${relationship.label.length * 7 + 8}" height="16" fill="white" fill-opacity="0.85" rx="3" />
+                <text x="${rel.labelPosition.x}" y="${rel.labelPosition.y}" text-anchor="middle" dominant-baseline="middle" fill="${this.theme.colors.textLight}" font-family="${this.theme.fontFamily}" font-size="11" font-style="italic">
+                    ${this.escapeXml(relationship.label)}
+                </text>
+            `;
+      }
+      return `
+            <g>
+                <line x1="${start.x}" y1="${start.y}" x2="${end.x}" y2="${end.y}" stroke="${this.theme.colors.line}" stroke-width="1.3" stroke-dasharray="${strokeDash}" marker-end="${markerEnd}"/>
+                ${labelSvg}
+            </g>
+        `;
+    }
+    renderNote(noteNode) {
+      const { x, y, width, height, note } = noteNode;
+      const fold = 12;
+      return `
+            <g transform="translate(${x}, ${y})">
+                <path d="M0,0 L${width - fold},0 L${width},${fold} L${width},${height} L0,${height} Z" fill="${this.theme.colors.noteFill}" stroke="${this.theme.colors.noteStroke}" stroke-width="1" />
+                <path d="M${width - fold},0 L${width - fold},${fold} L${width},${fold}" fill="none" stroke="${this.theme.colors.noteStroke}" stroke-width="1" />
+                <text x="10" y="18" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize - 1}">
+                    ${note.text.split("\n").map((line, i) => `<tspan x="10" dy="${i === 0 ? 0 : "1.3em"}">${this.escapeXml(line)}</tspan>`).join("")}
+                </text>
+            </g>
+        `;
+    }
+    escapeXml(text) {
+      return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+    renderPort(node, diagram, layoutResult) {
+      const { x, y, width, height, component } = node;
+      const fill = this.theme.colors.line;
+      let labelSvg = "";
+      if (component.parentId) {
+        const parent = layoutResult.components.find((c) => c.component.name === component.parentId);
+        if (parent) {
+          const cx = x + width / 2;
+          const cy = y + height / 2;
+          const pcx = parent.x + parent.width / 2;
+          const pcy = parent.y + parent.height / 2;
+          const dx = cx - pcx;
+          const dy = cy - pcy;
+          let tx = 0, ty = 0;
+          let anchor = "middle";
+          let baseline = "middle";
+          const padding = 10;
+          if (Math.abs(dx) >= Math.abs(dy)) {
+            if (dx > 0) {
+              tx = x - padding / 2;
+              ty = cy;
+              anchor = "end";
+            } else {
+              tx = x + width + padding / 2;
+              ty = cy;
+              anchor = "start";
+            }
+          } else {
+            if (dy > 0) {
+              tx = cx;
+              ty = y - padding / 2;
+              baseline = "auto";
+            } else {
+              tx = cx;
+              ty = y + height + padding;
+              baseline = "hanging";
+            }
+          }
+          const label = component.label || component.name;
+          labelSvg = `<text x="${tx}" y="${ty}" text-anchor="${anchor}" dominant-baseline="${baseline}" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize - 2}">${this.escapeXml(label)}</text>`;
+        }
+      }
+      return `
+            <g>
+                <rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${fill}" stroke="${this.theme.colors.defaultStroke}" stroke-width="1" />
+                ${labelSvg}
+            </g>
+        `;
+    }
+  };
+
   // src/index.ts
   function renderSequenceDiagram(content) {
     const parser = new SequenceParser();
@@ -1670,24 +2933,45 @@ var seeduml = (() => {
       const diagram = parser.parse(content);
       return renderer.render(diagram);
     } catch (e) {
-      const errorMsg = e.message || "Unknown error occurred during parsing";
-      const escapedError = errorMsg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      const width = 800;
-      const height = 100;
-      return `
-            <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="background: white; font-family: sans-serif;">
-                <rect width="100%" height="100%" fill="#ffeeee" stroke="#ff0000" stroke-width="2" />
-                <text x="20" y="50" fill="#ff0000" font-size="16" font-weight="bold">${escapedError}</text>
-            </svg>
-        `.trim();
+      return renderError(e);
     }
+  }
+  function renderComponentDiagram(content) {
+    const parser = new ComponentParser();
+    const renderer = new ComponentSVGRenderer();
+    try {
+      const diagram = parser.parse(content);
+      return renderer.render(diagram);
+    } catch (e) {
+      return renderError(e);
+    }
+  }
+  function renderError(e) {
+    const errorMsg = e.message || "Unknown error occurred during parsing";
+    const escapedError = errorMsg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const width = 800;
+    const height = 100;
+    return `
+        <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="background: white; font-family: sans-serif;">
+            <rect width="100%" height="100%" fill="#ffeeee" stroke="#ff0000" stroke-width="2" />
+            <text x="20" y="50" fill="#ff0000" font-size="16" font-weight="bold">${escapedError}</text>
+        </svg>
+    `.trim();
+  }
+  function render(content) {
+    const isComponent = /\b(component|interface|package|node|cloud|database|frame|folder|\[.*?\])\b/.test(content);
+    const isSequence = /\b(participant|actor|boundary|control|entity|collections|queue|sequence)\b/.test(content);
+    if (isComponent && !isSequence) return renderComponentDiagram(content);
+    if (!isComponent && isSequence) return renderSequenceDiagram(content);
+    if (/^\[.*?\]/m.test(content)) return renderComponentDiagram(content);
+    return renderSequenceDiagram(content);
   }
   function renderAll(selector = "pre.seeduml") {
     if (typeof document === "undefined") return;
     const blocks = document.querySelectorAll(selector);
     blocks.forEach((block) => {
       const content = block.textContent || "";
-      const svg = renderSequenceDiagram(content);
+      const svg = render(content);
       const container = document.createElement("div");
       container.className = "seeduml-diagram";
       container.innerHTML = svg;
@@ -1710,12 +2994,16 @@ var seeduml = (() => {
   if (typeof window !== "undefined") {
     window.seeduml = {
       renderSequenceDiagram,
+      renderComponentDiagram,
+      render,
       renderAll,
       initialize
     };
   }
   var index_default = {
     renderSequenceDiagram,
+    renderComponentDiagram,
+    render,
     renderAll,
     initialize
   };
