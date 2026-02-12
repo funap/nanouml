@@ -67,7 +67,7 @@ export class ComponentParser implements Parser {
                         const description = pendingNote.text.join('\n');
                         const comp = diagram.findComponent(pendingNote.linkedTo);
                         if (comp) {
-                            comp.label = comp.label ? `${comp.label}\n${description}` : description;
+                            comp.label = description;
                         }
                         pendingNote = null;
                     } else if (line.toLowerCase() === 'end note') {
@@ -87,7 +87,7 @@ export class ComponentParser implements Parser {
                         const description = pendingNote.text.join('\n');
                         const comp = diagram.findComponent(pendingNote.linkedTo!);
                         if (comp) {
-                            comp.label = comp.label ? `${comp.label}\n${description}` : description;
+                            comp.label = description;
                         }
                         pendingNote = null;
                     } else {

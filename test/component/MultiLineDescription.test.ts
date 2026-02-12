@@ -16,11 +16,7 @@ on several lines
 
         const comp = diagram.components.find(c => c.name === 'comp1');
         expect(comp).toBeDefined();
-        // The label should accumulate the lines
-        // Note: Formatting might include newlines or be joined. PlantUML usually keeps newlines.
-        expect(comp?.label).toContain('This component');
-        expect(comp?.label).toContain('has a long comment');
-        expect(comp?.label).toContain('on several lines');
+        expect(comp?.label).toBe('This component\nhas a long comment\non several lines');
     });
 
     it('should parse bracket component with multi-line', () => {
@@ -35,7 +31,6 @@ on several lines
 
         const comp = diagram.components.find(c => c.name === 'c2');
         expect(comp).toBeDefined();
-        expect(comp?.label).toContain('Line 1');
-        expect(comp?.label).toContain('Line 2');
+        expect(comp?.label).toBe('Line 1\nLine 2');
     });
 });
