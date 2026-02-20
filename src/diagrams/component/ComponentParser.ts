@@ -99,7 +99,26 @@ export class ComponentParser implements Parser {
 
             const currentParentId = parentStack.length > 0 ? parentStack[parentStack.length - 1] : undefined;
 
-            // 1. Components and Interfaces definitions
+            // 1. Position Hint Components (Extended Syntax)
+            const posHintMatch = line.match(/^\[([^\]]+)\]\s+(left\s+of|right\s+of|top\s+of|bottom\s+of)\s+\[([^\]]+)\](?:\s+(#\w+))?$/i);
+            if (posHintMatch) {
+                const name = posHintMatch[1];
+                const posRaw = posHintMatch[2].toLowerCase().replace(/\s+of$/, '');
+                const refName = posHintMatch[3];
+                const color = posHintMatch[4];
+
+                let position: 'left' | 'right' | 'top' | 'bottom';
+                if (posRaw === 'left') position = 'left';
+                else if (posRaw === 'right') position = 'right';
+                else if (posRaw === 'top') position = 'top';
+                else position = 'bottom';
+
+                const comp = diagram.addComponent(name, 'component', name, currentParentId, this.parseColor(color));
+                comp.positionHint = { reference: refName, position };
+                continue;
+            }
+
+            // 2. Components and Interfaces definitions
             const componentMatch = line.match(/^component\s+(?:\[(.*?)\]|(".*?"|\S+))(?:\s+as\s+(\S+))?(?:\s+(#\w+))?(?:\s*\[)?$/i);
             if (componentMatch) {
                 const bracketName = componentMatch[1];

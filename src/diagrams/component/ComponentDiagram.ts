@@ -15,6 +15,11 @@ export interface Component {
     isVisible: boolean;
     parentId?: string; // ID of the parent container
     longDescription?: string;
+    declarationOrder: number;
+    positionHint?: {
+        reference: string;
+        position: 'left' | 'right' | 'top' | 'bottom';
+    };
 }
 
 export interface Relationship {
@@ -45,7 +50,10 @@ export class ComponentDiagram implements Diagram {
     addComponent(name: string, type: ComponentType, label?: string, parentId?: string, color?: string): Component {
         let component = this.components.find(c => c.name === name);
         if (!component) {
-            component = { name, type, label: label || name, isVisible: true, parentId, color };
+            component = {
+                name, type, label: label || name, isVisible: true, parentId, color,
+                declarationOrder: this.components.length
+            };
             this.components.push(component);
         } else {
             // Update existing component if needed (e.g. adding properties later)

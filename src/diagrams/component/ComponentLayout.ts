@@ -117,6 +117,12 @@ export class ComponentLayout {
     }
 
     private straightenVerticalLines(nodes: ComponentLayoutNode[]) {
+        const hasPositionBinding = new Set<string>();
+        this.diagram.components.filter(c => c.positionHint).forEach(c => {
+            hasPositionBinding.add(c.name);
+            hasPositionBinding.add(c.positionHint!.reference);
+        });
+
         const vRels = this.diagram.relationships.filter(r => !r.direction || r.direction === 'down' || r.direction === 'up');
         if (vRels.length === 0) return;
 
@@ -147,6 +153,8 @@ export class ComponentLayout {
                 const nodeTo = this.getAncestorUnder(rel.to, lcp);
 
                 if (nodeFrom && nodeTo && nodeFrom !== nodeTo) {
+                    if (hasPositionBinding.has(nodeFrom) || hasPositionBinding.has(nodeTo)) return;
+
                     if (!shifts.has(nodeFrom)) shifts.set(nodeFrom, { totalShift: 0, count: 0 });
                     if (!shifts.has(nodeTo)) shifts.set(nodeTo, { totalShift: 0, count: 0 });
 
@@ -272,6 +280,49 @@ export class ComponentLayout {
         const compNames = new Set(components.map(c => c.name));
         const gridPos = new Map<string, { row: number, col: number }>();
 
+        const isOccupied = (pos: { row: number, col: number }, grid: Map<string, { row: number, col: number }>) => {
+            for (const p of grid.values()) {
+                if (p.row === pos.row && p.col === pos.col) return true;
+            }
+            return false;
+        };
+
+        // Phase 2a: Position Hints (Highest priority)
+        const hintsToProcess = components
+            .filter(c => c.positionHint)
+            .sort((a, b) => a.declarationOrder - b.declarationOrder);
+
+        for (const comp of hintsToProcess) {
+            const hint = comp.positionHint!;
+            const refComp = components.find(c => c.name === hint.reference);
+            if (!refComp) continue;
+
+            if (!gridPos.has(hint.reference)) {
+                gridPos.set(hint.reference, { row: 0, col: 0 });
+            }
+
+            const refPos = gridPos.get(hint.reference)!;
+            let targetPos: { row: number; col: number };
+
+            switch (hint.position) {
+                case 'right': targetPos = { row: refPos.row, col: refPos.col + 1 }; break;
+                case 'left': targetPos = { row: refPos.row, col: refPos.col - 1 }; break;
+                case 'bottom': targetPos = { row: refPos.row + 1, col: refPos.col }; break;
+                case 'top': targetPos = { row: refPos.row - 1, col: refPos.col }; break;
+                default: targetPos = { row: refPos.row + 1, col: refPos.col }; break;
+            }
+
+            // Resolve collision based on the intended direction
+            while (isOccupied(targetPos, gridPos)) {
+                if (hint.position === 'left') targetPos.col--;
+                else if (hint.position === 'right') targetPos.col++;
+                else if (hint.position === 'top') targetPos.row--;
+                else if (hint.position === 'bottom') targetPos.row++;
+                else targetPos.col++;
+            }
+            gridPos.set(comp.name, targetPos);
+        }
+
         // Build a map of descendant->ancestor for each component in this group
         const descendantToAncestor = new Map<string, string>();
         components.forEach(comp => {
@@ -318,12 +369,30 @@ export class ComponentLayout {
             });
 
             const queue: string[] = [];
-            // Pick a root (preferably one with in-degree 0)
-            const roots = components.filter(c => !relevantRels.some(r => r.to === c.name));
-            const startNode = roots.length > 0 ? roots[0].name : relevantRels[0].from;
+            // Seed queue with components already placed by hints
+            for (const name of gridPos.keys()) {
+                queue.push(name);
+            }
 
-            gridPos.set(startNode, { row: 0, col: 0 });
-            queue.push(startNode);
+            // Pick roots (preferably with in-degree 0)
+            const roots = components
+                .filter(c => !relevantRels.some(r => r.to === c.name))
+                .sort((a, b) => a.declarationOrder - b.declarationOrder);
+
+            if (queue.length === 0) {
+                const startNode = roots.length > 0 ? roots[0].name : relevantRels[0].from;
+                gridPos.set(startNode, { row: 0, col: 0 });
+                queue.push(startNode);
+            }
+
+            for (const root of roots) {
+                if (!gridPos.has(root.name) && relevantRels.some(r => r.from === root.name || r.to === root.name)) {
+                    let col = 0;
+                    while (isOccupied({ row: 0, col }, gridPos)) col++;
+                    gridPos.set(root.name, { row: 0, col });
+                    queue.push(root.name);
+                }
+            }
 
             const visited = new Set<string>();
             while (queue.length > 0) {
@@ -345,7 +414,12 @@ export class ComponentLayout {
 
                 // Symmetrical Distribution
                 byDir.forEach((targets, dir) => {
-                    targets.forEach((target, i) => {
+                    const sortedTargets = targets.sort((a, b) => {
+                        const compA = components.find(c => c.name === a);
+                        const compB = components.find(c => c.name === b);
+                        return (compA?.declarationOrder ?? 0) - (compB?.declarationOrder ?? 0);
+                    });
+                    sortedTargets.forEach((target, i) => {
                         let row = currentPos.row;
                         let col = currentPos.col;
 
@@ -372,11 +446,7 @@ export class ComponentLayout {
                         }
 
                         // Basic collision resolve (temporary, will refine in Phase 3)
-                        const isTaken = (r: number, c: number) => {
-                            for (const p of gridPos.values()) if (p.row === r && p.col === c) return true;
-                            return false;
-                        };
-                        while (isTaken(row, col)) {
+                        while (isOccupied({ row, col }, gridPos)) {
                             if (dir === 'down' || dir === 'up') col++; else row++;
                         }
 
@@ -388,7 +458,9 @@ export class ComponentLayout {
         }
 
         // Assign remaining unconnected components (fallback grid)
-        const unpositioned = components.filter(c => !gridPos.has(c.name));
+        const unpositioned = components
+            .filter(c => !gridPos.has(c.name))
+            .sort((a, b) => a.declarationOrder - b.declarationOrder);
         if (unpositioned.length > 0) {
             let maxRow = -1;
             gridPos.forEach(pos => maxRow = Math.max(maxRow, pos.row));
@@ -402,8 +474,15 @@ export class ComponentLayout {
             });
         }
 
+        const hasPositionBinding = new Set<string>();
+        components.filter(c => c.positionHint).forEach(c => {
+            hasPositionBinding.add(c.name);
+            hasPositionBinding.add(c.positionHint!.reference);
+        });
+
         // Phase 3: Global Alignment Polish
         components.forEach(comp => {
+            if (hasPositionBinding.has(comp.name)) return;
             const rels = relevantRels.filter(r => r.from === comp.name && r.direction === 'down');
             if (rels.length > 0) { // Even single child should try to align
                 const pos = gridPos.get(comp.name);
