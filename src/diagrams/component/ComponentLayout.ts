@@ -674,8 +674,8 @@ export class ComponentLayout {
         };
 
         // Clip the line to the rectangles boundaries
-        const startPad = fromComp?.type === 'interface' ? this.theme.interfaceRadius + 2 : 5;
-        const endPad = toComp?.type === 'interface' ? this.theme.interfaceRadius + 2 : 10; // larger for arrow target
+        const startPad = fromComp?.type === 'interface' ? this.theme.interfaceRadius : 0;
+        const endPad = toComp?.type === 'interface' ? this.theme.interfaceRadius : 0;
 
         const start = this.getIntersection(startCenter, endCenter, fromRect, startPad, fromComp?.type === 'interface');
         const end = this.getIntersection(endCenter, startCenter, toRect, endPad, toComp?.type === 'interface');

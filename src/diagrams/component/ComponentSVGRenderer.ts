@@ -374,30 +374,30 @@ export class ComponentSVGRenderer implements Renderer {
                 let anchor = 'middle';
                 let baseline = 'middle';
 
-                // Position label "inside" the component to avoid cluttering external arrows
+                // Position label "outside" the component
                 const padding = 10;
 
                 if (Math.abs(dx) >= Math.abs(dy)) {
                     // Horizontal
-                    if (dx > 0) { // Right side -> Label Left
-                        tx = x - padding / 2;
-                        ty = cy;
-                        anchor = 'end';
-                    } else { // Left side -> Label Right
+                    if (dx > 0) { // Right side -> Label Right
                         tx = x + width + padding / 2;
                         ty = cy;
                         anchor = 'start';
+                    } else { // Left side -> Label Left
+                        tx = x - padding / 2;
+                        ty = cy;
+                        anchor = 'end';
                     }
                 } else {
                     // Vertical
-                    if (dy > 0) { // Bottom side -> Label Top
-                        tx = cx;
-                        ty = y - padding / 2;
-                        baseline = 'auto'; // default, bottom of text at y
-                    } else { // Top side -> Label Bottom
+                    if (dy > 0) { // Bottom side -> Label Bottom
                         tx = cx;
                         ty = y + height + padding; // approx text height
                         baseline = 'hanging';
+                    } else { // Top side -> Label Top
+                        tx = cx;
+                        ty = y - padding / 2;
+                        baseline = 'auto'; // default, bottom of text at y
                     }
                 }
 
