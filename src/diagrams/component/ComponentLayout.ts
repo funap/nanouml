@@ -253,9 +253,11 @@ export class ComponentLayout {
                 height = this.theme.interfaceRadius * 2;
                 // Interfaces usually have labels outside, but we still need to account for them in the layout cell
                 const label = comp.label || comp.name;
-                const textWidth = label.length * 8;
+                const lines = label.split(/\\n|\n/);
+                const maxLineLen = Math.max(...lines.map(l => l.length));
+                const textWidth = maxLineLen * 8;
                 width = Math.max(width, textWidth);
-                height += 20; // Space for label below
+                height += lines.length * 20; // Space for label below
             } else {
                 const allChildren = this.diagram.components.filter(c => c.parentId === comp.name);
                 const ports = allChildren.filter(c => c.type === 'port' || c.type === 'portin' || c.type === 'portout');

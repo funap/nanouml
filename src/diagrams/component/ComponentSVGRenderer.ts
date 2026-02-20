@@ -140,18 +140,19 @@ export class ComponentSVGRenderer implements Renderer {
         `;
     }
 
-    /** SysML Interface: Lollipop (provided interface) */
     private renderInterface(node: ComponentLayoutNode): string {
         const { x, y, width, height, component } = node;
         const r = this.theme.interfaceRadius;
         const cx = x + width / 2;
         const cy = y + height / 2;
+        const label = component.label || component.name;
+        const lines = label.split(/\\n|\n/);
 
         return `
             <g>
                 <circle cx="${cx}" cy="${cy}" r="${r}" fill="${this.theme.colors.interfaceFill}" stroke="${this.theme.colors.defaultStroke}" stroke-width="1.5"/>
                 <text x="${cx}" y="${cy + r + 16}" text-anchor="middle" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
-                    ${this.escapeXml(component.label || component.name)}
+                    ${lines.map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : '1.2em'}">${this.escapeXml(line)}</tspan>`).join('')}
                 </text>
             </g>
         `;
@@ -224,8 +225,10 @@ export class ComponentSVGRenderer implements Renderer {
     private renderFrame(node: ComponentLayoutNode): string {
         const { x, y, width, height, component } = node;
         const label = component.label || component.name;
-        const tagW = Math.min(label.length * 8 + 24, width * 0.6);
-        const tagH = 22;
+        const lines = label.split(/\\n|\n/);
+        const maxLineLen = Math.max(...lines.map(l => l.length));
+        const tagW = Math.min(maxLineLen * 8 + 24, width * 0.6);
+        const tagH = 22 + (lines.length - 1) * 14;
 
         return `
             <g filter="url(#comp-shadow)">
@@ -234,7 +237,7 @@ export class ComponentSVGRenderer implements Renderer {
                 <!-- Pentagon name tag -->
                 <polygon points="${x},${y} ${x + tagW},${y} ${x + tagW},${y + tagH - 6} ${x + tagW - 6},${y + tagH} ${x},${y + tagH}" fill="${this.theme.colors.frameFill}" stroke="${this.theme.colors.defaultStroke}" stroke-width="1.3" />
                 <text x="${x + 8}" y="${y + 15}" text-anchor="start" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize - 1}">
-                    ${this.escapeXml(label)}
+                    ${lines.map((line, i) => `<tspan x="${x + 8}" dy="${i === 0 ? 0 : '1.2em'}">${this.escapeXml(line)}</tspan>`).join('')}
                 </text>
             </g>
         `;
@@ -244,6 +247,7 @@ export class ComponentSVGRenderer implements Renderer {
     private renderCloud(node: ComponentLayoutNode): string {
         const { x, y, width, height, component } = node;
         const label = component.label || component.name;
+        const lines = label.split(/\\n|\n/);
         const cx = width / 2;
         const cy = height / 2;
         // SVG cloud shape using cubic beziers
@@ -262,8 +266,8 @@ export class ComponentSVGRenderer implements Renderer {
                     C${w * 0.6},${h * 0.9} ${w * 0.4},${h * 0.9} ${w * 0.25},${h * 0.7}
                     Z
                 " fill="${this.theme.colors.cloudFill}" fill-opacity="0.5" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
-                ${label ? `<text x="${cx}" y="${cy + 5}" text-anchor="middle" dominant-baseline="middle" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
-                    ${this.escapeXml(label)}
+                ${label ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
+                    ${lines.map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? -((lines.length - 1) * 0.6) + 'em' : '1.2em'}">${this.escapeXml(line)}</tspan>`).join('')}
                 </text>` : ''}
             </g>
         `;
@@ -273,6 +277,7 @@ export class ComponentSVGRenderer implements Renderer {
     private renderDatabase(node: ComponentLayoutNode): string {
         const { x, y, width, height, component } = node;
         const label = component.label || component.name;
+        const lines = label.split(/\\n|\n/);
         const ry = 12; // ellipse y-radius for top/bottom caps
 
         return `
@@ -287,7 +292,7 @@ export class ComponentSVGRenderer implements Renderer {
                 <!-- Top ellipse (drawn last to overlay body) -->
                 <ellipse cx="${width / 2}" cy="${ry}" rx="${width / 2}" ry="${ry}" fill="${this.theme.colors.databaseFill}" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
                 ${label ? `<text x="${width / 2}" y="${ry + 20}" text-anchor="middle" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
-                    ${this.escapeXml(label)}
+                    ${lines.map((line, i) => `<tspan x="${width / 2}" dy="${i === 0 ? 0 : '1.2em'}">${this.escapeXml(line)}</tspan>`).join('')}
                 </text>` : ''}
             </g>
         `;
