@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SequenceParser } from '../src/diagrams/sequence/SequenceParser';
+import { SequenceParser } from '../../src/diagrams/sequence/SequenceParser';
 
 describe('Sequence Autonumber', () => {
     it('should handle autonumber stop and resume', () => {

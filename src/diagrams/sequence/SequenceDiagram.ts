@@ -1,4 +1,5 @@
 import { Diagram } from '../../core/Diagram';
+import { decodeUnicode } from '../../core/RichText';
 
 export type ParticipantType = 'participant' | 'actor' | 'boundary' | 'control' | 'entity' | 'database' | 'collections' | 'queue';
 
@@ -159,13 +160,14 @@ export class SequenceDiagram implements Diagram {
             } else {
                 msgNumber = rawNumber;
             }
-
-            // Replace %autonumber% in the text itself (literally)
-            text = text.replace(/%autonumber%/g, rawNumber);
-
-            // Then decode all Unicode escapes like <U+XXXX>
-            text = text.replace(/<U\+([0-9a-fA-F]{4})>/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
         }
+
+        // Replace %autonumber% in the text itself (literally)
+        const rawNum = this.currentAutonumbers.join(this.autonumberDelimiter);
+        text = text.replace(/%autonumber%/g, rawNum);
+
+        // Then decode all Unicode escapes like <U+XXXX>
+        text = decodeUnicode(text);
 
         this.messages.push({ from, to, text, type, step, arrowHead, startHead, color, bidirectional, number: msgNumber });
 
@@ -298,16 +300,13 @@ export class SequenceDiagram implements Diagram {
         const noteStep = step !== undefined ? step : this.currentStep++;
         const owner = this.groupStack.length > 0 ? this.groupStack[this.groupStack.length - 1] : undefined;
 
-        // Replace %autonumber% in note text
-        if (this.autonumberConfig) {
-            const rawNumber = this.currentAutonumbers.join(this.autonumberDelimiter);
+        const rawNumber = this.currentAutonumbers.join(this.autonumberDelimiter);
 
-            // Replace %autonumber% literally
-            text = text.replace(/%autonumber%/g, rawNumber);
+        // Replace %autonumber% literally
+        text = text.replace(/%autonumber%/g, rawNumber);
 
-            // Then decode all Unicode escapes
-            text = text.replace(/<U\+([0-9a-fA-F]{4})>/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-        }
+        // Then decode all Unicode escapes
+        text = decodeUnicode(text);
 
         this.notes.push({
             text,

@@ -1,7 +1,7 @@
 import { SequenceParser } from './diagrams/sequence/SequenceParser';
-import { SequenceSVGRenderer } from './diagrams/sequence/SequenceSVGRenderer';
+import { SequenceRenderer } from './diagrams/sequence/SequenceRenderer';
 import { ComponentParser } from './diagrams/component/ComponentParser';
-import { ComponentSVGRenderer } from './diagrams/component/ComponentSVGRenderer';
+import { ComponentRenderer } from './diagrams/component/ComponentRenderer';
 
 export interface InitializeConfig {
     startOnLoad?: boolean;
@@ -10,7 +10,7 @@ export interface InitializeConfig {
 
 export function renderSequenceDiagram(content: string): string {
     const parser = new SequenceParser();
-    const renderer = new SequenceSVGRenderer();
+    const renderer = new SequenceRenderer();
     try {
         const diagram = parser.parse(content);
         return renderer.render(diagram);
@@ -21,7 +21,7 @@ export function renderSequenceDiagram(content: string): string {
 
 export function renderComponentDiagram(content: string): string {
     const parser = new ComponentParser();
-    const renderer = new ComponentSVGRenderer();
+    const renderer = new ComponentRenderer();
     try {
         const diagram = parser.parse(content);
         return renderer.render(diagram);

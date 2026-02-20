@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { ComponentParser } from '../../src/diagrams/component/ComponentParser';
 import { ComponentLayout } from '../../src/diagrams/component/ComponentLayout';
 import { defaultTheme } from '../../src/diagrams/component/ComponentTheme';
-import { ComponentSVGRenderer } from '../../src/diagrams/component/ComponentSVGRenderer';
+import { ComponentRenderer } from '../../src/diagrams/component/ComponentRenderer';
 
 // ============================================================================
 // Helper functions
@@ -45,7 +45,7 @@ describe('SVG Rendering', () => {
         `;
         const parser = new ComponentParser();
         const diagram = parser.parse(input);
-        const renderer = new ComponentSVGRenderer();
+        const renderer = new ComponentRenderer();
         const svg = renderer.render(diagram);
 
         const componentIndex = svg.indexOf('<rect');
@@ -58,7 +58,7 @@ describe('SVG Rendering', () => {
     it('should render component labels as text', () => {
         const parser = new ComponentParser();
         const diagram = parser.parse('component MyComp');
-        const renderer = new ComponentSVGRenderer();
+        const renderer = new ComponentRenderer();
         const svg = renderer.render(diagram);
 
         expect(svg).toContain('MyComp');
@@ -71,7 +71,7 @@ describe('SVG Rendering', () => {
                 portin p1
             }
         `);
-        const renderer = new ComponentSVGRenderer();
+        const renderer = new ComponentRenderer();
         const svg = renderer.render(diagram);
         expect(svg).toContain('>p1<');
     });
@@ -94,7 +94,7 @@ describe('SVG Rendering', () => {
             [A] --> [B]
             [B] --> [C]
         `);
-        const renderer = new ComponentSVGRenderer();
+        const renderer = new ComponentRenderer();
         const svg = renderer.render(diagram);
 
         expect(svg).toContain('<svg');
@@ -340,7 +340,7 @@ describe('Port Rendering', () => {
                 portout p2
             }
         `);
-        const renderer = new ComponentSVGRenderer();
+        const renderer = new ComponentRenderer();
         const svg = renderer.render(diagram);
 
         expect(svg).toContain('>p1<');
