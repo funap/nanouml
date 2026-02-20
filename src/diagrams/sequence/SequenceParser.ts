@@ -402,15 +402,35 @@ export class SequenceParser implements Parser {
                 continue;
             }
 
-            // Handle autonumber [start] [increment] [format]
-            const autonumberMatch = line.match(/^autonumber(?:\s+(\d+))?(?:\s+(\d+))?(?:\s+"(.*?)"|)$/i);
-            if (autonumberMatch) {
-                let [, start, increment, format] = autonumberMatch;
-                diagram.setAutonumber(
-                    start ? parseInt(start, 10) : 1,
-                    increment ? parseInt(increment, 10) : 1,
+            // Handle autonumber stop / resume
+            if (/^autonumber\s+stop$/i.test(line)) {
+                diagram.stopAutonumber();
+                continue;
+            }
+            const autonumberResumeMatch = line.match(/^autonumber\s+resume(?:\s+(\d+))?(?:\s+"(.*?)"|)$/i);
+            if (autonumberResumeMatch) {
+                let [, increment, format] = autonumberResumeMatch;
+                diagram.resumeAutonumber(
+                    increment ? parseInt(increment, 10) : undefined,
                     format
                 );
+                continue;
+            }
+
+            // Handle autonumber inc A, B, ...
+            const autonumberIncMatch = line.match(/^autonumber\s+inc\s+([A-Z])$/i);
+            if (autonumberIncMatch) {
+                diagram.incrementAutonumberLevel(autonumberIncMatch[1]);
+                continue;
+            }
+
+            // Handle autonumber [start] [increment] [format]
+            // Allow start to be hierarchical like 1.1.1
+            const autonumberMatch = line.match(/^autonumber(?:\s+([\d.]+))?(?:\s+(\d+))?(?:\s+"(.*?)"|)$/i);
+            if (autonumberMatch) {
+                let [, startStr, incrementStr, format] = autonumberMatch;
+                const increment = incrementStr ? parseInt(incrementStr, 10) : 1;
+                diagram.setAutonumber(startStr || 1, increment, format);
                 continue;
             }
 

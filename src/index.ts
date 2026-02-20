@@ -44,21 +44,36 @@ function renderError(e: any): string {
 }
 
 export function render(content: string): string {
-    // Basic auto-detection logic
-    const isComponent = /\b(component|interface|package|node|cloud|database|frame|folder)\b|\[.*?\]/.test(content);
-    const isSequence = /\b(participant|actor|boundary|control|entity|collections|queue|sequence)\b/.test(content);
+    // Sequence-specific keywords that strongly indicate a sequence diagram.
+    // These take absolute priority because they never appear in component diagrams.
+    const hasSequenceKeywords = /\b(participant|actor|boundary|control|entity|collections|queue)\b/.test(content);
 
-    // Default to sequence if ambiguous but has -> or -- (could be component too)
-    // Preference: Explicit keywords > ambiguous arrows
+    // Component-specific keywords (explicit declarations)
+    const hasComponentKeywords = /\b(component|package|node|cloud|database|frame|folder)\b/.test(content);
+
+    // Component bracket syntax [Name], but only when at the start of a line
+    // to avoid matching group labels like "group My Label [label2]"
+    const hasComponentBrackets = /^\s*\[[^\]]+\]/m.test(content);
+
+    const isComponent = hasComponentKeywords || hasComponentBrackets;
+    const isSequence = hasSequenceKeywords;
+
+    // Sequence wins if it has sequence-specific keywords (participant etc.)
+    if (isSequence && !isComponent) return renderSequenceDiagram(content);
     if (isComponent && !isSequence) return renderComponentDiagram(content);
-    if (!isComponent && isSequence) return renderSequenceDiagram(content);
 
-    // Fallback: Check for component specific syntax like [Bracket] or component elements
-    if (/\[.*?\]/.test(content)) return renderComponentDiagram(content);
+    // Both or neither: prefer sequence when sequence-related control flow detected
+    if (/\b(alt|else|loop|group|note|opt|par|break|critical|ref)\b/.test(content)) {
+        return renderSequenceDiagram(content);
+    }
+
+    // Fallback: [Bracket] at line start → component
+    if (hasComponentBrackets) return renderComponentDiagram(content);
 
     // Default
     return renderSequenceDiagram(content);
 }
+
 
 /**
  * Automatically render all seeduml diagram blocks on the page

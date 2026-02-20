@@ -360,26 +360,22 @@ export class SequenceSVGRenderer implements Renderer<SequenceDiagram> {
             }
 
             // Draw text
-            const text = m.number ? `[${m.number}] ${m.text}` : m.text;
-            const lines = text.split('\n');
+            const numberPrefix = m.number ? this.formatRichText(m.number) : '';
+            const messageText = m.text || '';
+            const lines = messageText.split('\n');
             const anchor = ml.points.length > 2 ? 'start' : 'middle';
 
             lines.forEach((line, i) => {
                 const lineY = ml.labelPosition.y - (lines.length - 1 - i) * 15 - 5;
-                // Adjust Y for self-message? Self message label position in LayoutEngine was: y + 10...
-                // Wait, LayoutEngine `labelPosition` for self message was `y + 10`.
-                // Standard message was `y`.
-                // Here we are subtracting.
-                // Let's trust LayoutEngine provided the "Center" or "Start" of the text block.
-
                 let y = lineY;
                 if (ml.points.length > 2) {
-                    // Self message text logic in original renderer:
-                    // y + 10 + i * 20
                     y = ml.labelPosition.y + i * 20;
                 }
 
-                svg += `<text x="${ml.labelPosition.x}" y="${y}" text-anchor="${anchor}" font-size="${this.theme.fontSize - 2}" fill="${strokeColor}">${line}</text>`;
+                const formattedLine = this.formatRichText(line);
+                const displayContent = (i === 0 && numberPrefix) ? `${numberPrefix} ${formattedLine}` : formattedLine;
+
+                svg += `<text x="${ml.labelPosition.x}" y="${y}" text-anchor="${anchor}" font-size="${this.theme.fontSize - 2}" fill="${strokeColor}">${displayContent}</text>`;
             });
         });
         return svg;
@@ -482,6 +478,24 @@ export class SequenceSVGRenderer implements Renderer<SequenceDiagram> {
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&apos;');
 
+        // Support HTML-like tags (PlantUML style)
+        // Bold: <b>...</b>
+        escaped = escaped.replace(/&lt;b&gt;(.*?)&lt;\/b&gt;/gi, '<tspan font-weight="bold">$1</tspan>');
+        // Underline: <u>...</u>
+        escaped = escaped.replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/gi, '<tspan text-decoration="underline">$1</tspan>');
+        // Italic: <i>...</i>
+        escaped = escaped.replace(/&lt;i&gt;(.*?)&lt;\/i&gt;/gi, '<tspan font-style="italic">$1</tspan>');
+        // Strike: <s>...</s>
+        escaped = escaped.replace(/&lt;s&gt;(.*?)&lt;\/s&gt;/gi, '<tspan text-decoration="line-through">$1</tspan>');
+        // Font Color: <font color="red">...</font> or <font color=red>...</font>
+        escaped = escaped.replace(/&lt;font\s+color=(?:&quot;)?(.*?)(?:&quot;)?&gt;(.*?)&lt;\/font&gt;/gi, '<tspan fill="$1">$2</tspan>');
+
+        // Support unclosed tags (sometimes used in format strings)
+        // This is a simple fallback that just starts a tspan if an opening tag is found but no closing tag
+        escaped = escaped.replace(/&lt;b&gt;(?!.*&lt;\/b&gt;)(.*)/gi, '<tspan font-weight="bold">$1</tspan>');
+        escaped = escaped.replace(/&lt;font\s+color=(?:&quot;)?(.*?)(?:&quot;)?&gt;(?!.*&lt;\/font&gt;)(.*)/gi, '<tspan fill="$1">$2</tspan>');
+
+        // Support Markdown-like syntax (Legacy/Alternative)
         escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<tspan font-weight="bold">$1</tspan>');
         escaped = escaped.replace(/\/\/(.*?)\/\//g, '<tspan font-style="italic">$1</tspan>');
         escaped = escaped.replace(/""(.*?)""/g, '<tspan font-family="monospace">$1</tspan>');
