@@ -411,20 +411,93 @@ export class ComponentLayout {
             });
 
             const queue: string[] = [];
-            // Seed queue with components already placed by hints
+            const visited = new Set<string>();
+
+            const processQueue = () => {
+                while (queue.length > 0) {
+                    const current = queue.shift()!;
+                    if (visited.has(current)) continue;
+                    visited.add(current);
+
+                    const currentPos = gridPos.get(current)!;
+                    const neighbors = adj.get(current) || [];
+
+                    // Group unvisited neighbors by direction
+                    const byDir = new Map<string, string[]>();
+                    neighbors.forEach(n => {
+                        if (!gridPos.has(n.target)) {
+                            if (!byDir.has(n.direction)) byDir.set(n.direction, []);
+                            byDir.get(n.direction)!.push(n.target);
+                        }
+                    });
+
+                    // Symmetrical Distribution
+                    byDir.forEach((targets, dir) => {
+                        const sortedTargets = targets.sort((a, b) => {
+                            const compA = components.find(c => c.name === a);
+                            const compB = components.find(c => c.name === b);
+                            return (compA?.declarationOrder ?? 0) - (compB?.declarationOrder ?? 0);
+                        });
+                        sortedTargets.forEach((target, i) => {
+                            let row = currentPos.row;
+                            let col = currentPos.col;
+
+                            // Calculate offset from center
+                            const offset = targets.length === 1 ? 0 : (i - (targets.length - 1) / 2);
+
+                            switch (dir) {
+                                case 'down':
+                                    row++;
+                                    break;
+                                case 'up':
+                                    row--;
+                                    break;
+                                case 'right':
+                                    col++;
+                                    break;
+                                case 'left':
+                                    col--;
+                                    break;
+                            }
+
+                            // Basic collision resolve (temporary, will refine in Phase 3)
+                            while (isOccupied({ row, col }, gridPos)) {
+                                if (dir === 'down' || dir === 'up') col++;
+                                else if (dir === 'left') col--;
+                                else if (dir === 'right') col++;
+                                else row++;
+                            }
+
+                            gridPos.set(target, { row, col });
+                            queue.push(target);
+                        });
+                    });
+                }
+            };
+
+            // 1. Initial seeds from hints
             for (const name of gridPos.keys()) {
                 queue.push(name);
             }
+            processQueue();
 
-            // Pick roots (preferably with in-degree 0)
+            // 2. Pick roots (preferably with in-degree 0)
             const roots = components
                 .filter(c => !relevantRels.some(r => r.to === c.name))
                 .sort((a, b) => a.declarationOrder - b.declarationOrder);
 
-            if (queue.length === 0) {
-                const startNode = roots.length > 0 ? roots[0].name : relevantRels[0].from;
+            // 3. Process roots sequentially, seeding only if not already discovered
+            if (gridPos.size === 0 && roots.length > 0) {
+                const startNode = roots[0].name;
                 gridPos.set(startNode, { row: 0, col: 0 });
                 queue.push(startNode);
+                processQueue();
+            } else if (gridPos.size === 0 && relevantRels.length > 0) {
+                // Should not normally happen if roots list is complete, but for safety
+                const startNode = relevantRels[0].from;
+                gridPos.set(startNode, { row: 0, col: 0 });
+                queue.push(startNode);
+                processQueue();
             }
 
             for (const root of roots) {
@@ -433,69 +506,8 @@ export class ComponentLayout {
                     while (isOccupied({ row: 0, col }, gridPos)) col++;
                     gridPos.set(root.name, { row: 0, col });
                     queue.push(root.name);
+                    processQueue();
                 }
-            }
-
-            const visited = new Set<string>();
-            while (queue.length > 0) {
-                const current = queue.shift()!;
-                if (visited.has(current)) continue;
-                visited.add(current);
-
-                const currentPos = gridPos.get(current)!;
-                const neighbors = adj.get(current) || [];
-
-                // Group unvisited neighbors by direction
-                const byDir = new Map<string, string[]>();
-                neighbors.forEach(n => {
-                    if (!gridPos.has(n.target)) {
-                        if (!byDir.has(n.direction)) byDir.set(n.direction, []);
-                        byDir.get(n.direction)!.push(n.target);
-                    }
-                });
-
-                // Symmetrical Distribution
-                byDir.forEach((targets, dir) => {
-                    const sortedTargets = targets.sort((a, b) => {
-                        const compA = components.find(c => c.name === a);
-                        const compB = components.find(c => c.name === b);
-                        return (compA?.declarationOrder ?? 0) - (compB?.declarationOrder ?? 0);
-                    });
-                    sortedTargets.forEach((target, i) => {
-                        let row = currentPos.row;
-                        let col = currentPos.col;
-
-                        // Calculate offset from center
-                        const offset = targets.length === 1 ? 0 : (i - (targets.length - 1) / 2);
-
-                        switch (dir) {
-                            case 'down':
-                                row++;
-                                col += Math.round(offset * 1.5); // Spread more if multiple
-                                break;
-                            case 'up':
-                                row--;
-                                col += Math.round(offset * 1.5);
-                                break;
-                            case 'right':
-                                col++;
-                                row += Math.round(offset * 1.5);
-                                break;
-                            case 'left':
-                                col--;
-                                row += Math.round(offset * 1.5);
-                                break;
-                        }
-
-                        // Basic collision resolve (temporary, will refine in Phase 3)
-                        while (isOccupied({ row, col }, gridPos)) {
-                            if (dir === 'down' || dir === 'up') col++; else row++;
-                        }
-
-                        gridPos.set(target, { row, col });
-                        queue.push(target);
-                    });
-                });
             }
         }
 
@@ -791,14 +803,15 @@ export class ComponentLayout {
             if (isHorizontal) {
                 let detourY = 0;
                 if (dy >= 0) {
-                    detourY = obstacle.y + obstacle.height + 80;
+                    detourY = obstacle.y + obstacle.height + 40;
                     detourDirection = 'down';
                 } else {
-                    detourY = obstacle.y - 80;
+                    detourY = obstacle.y - 40;
                     detourDirection = 'up';
                 }
-                control1 = { x: startCenter.x, y: detourY };
-                control2 = { x: endCenter.x, y: detourY };
+                const spanX = endCenter.x - startCenter.x;
+                control1 = { x: startCenter.x + spanX * 0.2, y: detourY };
+                control2 = { x: startCenter.x + spanX * 0.8, y: detourY };
             } else {
                 let detourX = 0;
                 if (dx >= 0) {
@@ -808,43 +821,33 @@ export class ComponentLayout {
                     detourX = obstacle.x - 80;
                     detourDirection = 'left';
                 }
-                control1 = { x: detourX, y: startCenter.y };
-                control2 = { x: detourX, y: endCenter.y };
+                const spanY = endCenter.y - startCenter.y;
+                control1 = { x: detourX, y: startCenter.y + spanY * 0.2 };
+                control2 = { x: detourX, y: startCenter.y + spanY * 0.8 };
             }
 
-            // Determine the best start side
-            let startProxyTarget = { ...control1 };
-            if (isHorizontal) {
-                // For horizontal arrows, we generally want to exit from the side (left/right)
-                // matching the target direction, even if we detour vertically.
-                if (dx > 0) startProxyTarget = { x: startCenter.x + 10000, y: startCenter.y };
-                else startProxyTarget = { x: startCenter.x - 10000, y: startCenter.y };
-            } else {
-                // For vertical arrows, we want to exit from the side of the detour
-                if (detourDirection === 'right') startProxyTarget = { x: startCenter.x + 10000, y: startCenter.y };
-                else if (detourDirection === 'left') startProxyTarget = { x: startCenter.x - 10000, y: startCenter.y };
-                else if (detourDirection === 'down') startProxyTarget = { x: startCenter.x, y: startCenter.y + 10000 };
-                else if (detourDirection === 'up') startProxyTarget = { x: startCenter.x, y: startCenter.y - 10000 };
-            }
+            // Determine the best connection points based on the detour direction
+            let proxyX = 0, proxyY = 0;
+            if (detourDirection === 'right') proxyX = 10000;
+            else if (detourDirection === 'left') proxyX = -10000;
+            else if (detourDirection === 'down') proxyY = 10000;
+            else if (detourDirection === 'up') proxyY = -10000;
 
-            start = this.getIntersection(startCenter, startProxyTarget, fromRect, startPad, fromComp?.type === 'interface');
+            start = this.getIntersection(
+                startCenter,
+                { x: startCenter.x + proxyX, y: startCenter.y + proxyY },
+                fromRect,
+                startPad,
+                fromComp?.type === 'interface'
+            );
 
-            // Determine the best end side
-            let endProxyTarget = { ...control2 };
-            if (isHorizontal) {
-                // For horizontal arrows, we generally want to enter from the side (left/right)
-                // opposite to the target direction.
-                if (dx > 0) endProxyTarget = { x: endCenter.x - 10000, y: endCenter.y };
-                else endProxyTarget = { x: endCenter.x + 10000, y: endCenter.y };
-            } else {
-                // For vertical arrows, enter from the side of the detour
-                if (detourDirection === 'right') endProxyTarget = { x: endCenter.x + 10000, y: endCenter.y };
-                else if (detourDirection === 'left') endProxyTarget = { x: endCenter.x - 10000, y: endCenter.y };
-                else if (detourDirection === 'down') endProxyTarget = { x: endCenter.x, y: endCenter.y + 10000 };
-                else if (detourDirection === 'up') endProxyTarget = { x: endCenter.x, y: endCenter.y - 10000 };
-            }
-
-            end = this.getIntersection(endCenter, endProxyTarget, toRect, endPad, toComp?.type === 'interface');
+            end = this.getIntersection(
+                endCenter,
+                { x: endCenter.x + proxyX, y: endCenter.y + proxyY },
+                toRect,
+                endPad,
+                toComp?.type === 'interface'
+            );
 
             path = [start, control1, control2, end];
             // Cubic Bezier midpoint at t=0.5
