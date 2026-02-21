@@ -314,6 +314,22 @@ export class ComponentRenderer implements Renderer {
             markerEnd = relationship.type === 'dashed' ? 'url(#comp-arrow-open)' : 'url(#comp-arrow-end)';
         }
 
+        let d = `M ${start.x} ${start.y}`;
+        if (path.length === 2) {
+            d += ` L ${end.x} ${end.y}`;
+        } else if (path.length === 3) {
+            // Quadratic Bezier: Start -> Control -> End
+            d += ` Q ${path[1].x} ${path[1].y} ${end.x} ${end.y}`;
+        } else if (path.length === 4) {
+            // Cubic Bezier: Start -> Control1 -> Control2 -> End
+            d += ` C ${path[1].x} ${path[1].y} ${path[2].x} ${path[2].y} ${end.x} ${end.y}`;
+        } else {
+            // Polyline
+            for (let i = 1; i < path.length; i++) {
+                d += ` L ${path[i].x} ${path[i].y}`;
+            }
+        }
+
         let labelSvg = '';
         if (rel.labelPosition && relationship.label) {
             labelSvg = `
@@ -326,7 +342,7 @@ export class ComponentRenderer implements Renderer {
 
         return `
             <g>
-                <line x1="${start.x}" y1="${start.y}" x2="${end.x}" y2="${end.y}" stroke="${this.theme.colors.line}" stroke-width="1.3" stroke-dasharray="${strokeDash}" marker-end="${markerEnd}"/>
+                <path d="${d}" fill="none" stroke="${this.theme.colors.line}" stroke-width="1.3" stroke-dasharray="${strokeDash}" marker-end="${markerEnd}"/>
                 ${labelSvg}
             </g>
         `;

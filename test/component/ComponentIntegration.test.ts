@@ -49,7 +49,7 @@ describe('SVG Rendering', () => {
         const svg = renderer.render(diagram);
 
         const componentIndex = svg.indexOf('<rect');
-        const relationshipIndex = svg.indexOf('<line');
+        const relationshipIndex = svg.indexOf('<path');
 
         expect(relationshipIndex).toBeGreaterThan(componentIndex);
         expect(componentIndex).not.toBe(-1);

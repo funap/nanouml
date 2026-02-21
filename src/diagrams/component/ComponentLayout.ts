@@ -107,6 +107,46 @@ export class ComponentLayout {
         // 6. Layout Relationships based on final positions
         const relationships: RelationshipLayoutNode[] = this.diagram.relationships.map(r => this.routeRelationship(r));
 
+        // 7. Expand bounds to include relationship paths (to avoid clipping curves)
+        relationships.forEach(rel => {
+            rel.path.forEach(p => {
+                minX = Math.min(minX, p.x);
+                minY = Math.min(minY, p.y);
+                maxX = Math.max(maxX, p.x);
+                maxY = Math.max(maxY, p.y);
+            });
+        });
+
+        // 8. Re-shift if curves extended beyond padding
+        const finalOffsetX = this.theme.padding - minX;
+        const finalOffsetY = this.theme.padding - minY;
+
+        if (finalOffsetX > 0 || finalOffsetY > 0) {
+            const dx = Math.max(0, finalOffsetX);
+            const dy = Math.max(0, finalOffsetY);
+
+            componentNodes.forEach(node => {
+                node.x += dx;
+                node.y += dy;
+            });
+            notes.forEach(note => {
+                note.x += dx;
+                note.y += dy;
+            });
+            relationships.forEach(rel => {
+                rel.path.forEach(p => {
+                    p.x += dx;
+                    p.y += dy;
+                });
+                if (rel.labelPosition) {
+                    rel.labelPosition.x += dx;
+                    rel.labelPosition.y += dy;
+                }
+            });
+            maxX += dx;
+            maxY += dy;
+        }
+
         return {
             components: componentNodes,
             relationships,
@@ -644,6 +684,55 @@ export class ComponentLayout {
         return result;
     }
 
+    private findObstacle(start: { x: number, y: number }, end: { x: number, y: number }, excludeNames: string[]): Rect | undefined {
+        const excludeSet = new Set(excludeNames);
+        let firstObstacle: Rect | undefined = undefined;
+        let minDist = Infinity;
+
+        for (const [name, rect] of this.layoutMap.entries()) {
+            if (excludeSet.has(name)) continue;
+
+            if (this.segmentIntersectsRect(start, end, rect)) {
+                const cx = rect.x + rect.width / 2;
+                const cy = rect.y + rect.height / 2;
+                const d = (cx - start.x) ** 2 + (cy - start.y) ** 2;
+
+                if (d < minDist) {
+                    minDist = d;
+                    firstObstacle = rect;
+                }
+            }
+        }
+        return firstObstacle;
+    }
+
+    private segmentIntersectsRect(p1: { x: number, y: number }, p2: { x: number, y: number }, rect: Rect): boolean {
+        const minX = Math.min(p1.x, p2.x);
+        const maxX = Math.max(p1.x, p2.x);
+        const minY = Math.min(p1.y, p2.y);
+        const maxY = Math.max(p1.y, p2.y);
+
+        if (maxX < rect.x || minX > rect.x + rect.width || maxY < rect.y || minY > rect.y + rect.height) {
+            return false;
+        }
+
+        const cx = rect.x + rect.width / 2;
+        const cy = rect.y + rect.height / 2;
+
+        const l2 = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
+        if (l2 === 0) return false;
+
+        let t = ((cx - p1.x) * (p2.x - p1.x) + (cy - p1.y) * (p2.y - p1.y)) / l2;
+        t = Math.max(0, Math.min(1, t));
+
+        const px = p1.x + t * (p2.x - p1.x);
+        const py = p1.y + t * (p2.y - p1.y);
+
+        const margin = 5;
+        return px >= rect.x - margin && px <= rect.x + rect.width + margin &&
+            py >= rect.y - margin && py <= rect.y + rect.height + margin;
+    }
+
     private routeRelationship(rel: Relationship): RelationshipLayoutNode {
         // Try to find from component or note
         let fromRect = this.layoutMap.get(rel.from);
@@ -677,13 +766,98 @@ export class ComponentLayout {
         const startPad = fromComp?.type === 'interface' ? this.theme.interfaceRadius : 0;
         const endPad = toComp?.type === 'interface' ? this.theme.interfaceRadius : 0;
 
-        const start = this.getIntersection(startCenter, endCenter, fromRect, startPad, fromComp?.type === 'interface');
-        const end = this.getIntersection(endCenter, startCenter, toRect, endPad, toComp?.type === 'interface');
+        let start = this.getIntersection(startCenter, endCenter, fromRect, startPad, fromComp?.type === 'interface');
+        let end = this.getIntersection(endCenter, startCenter, toRect, endPad, toComp?.type === 'interface');
+
+        let path = [start, end];
+        let labelPos = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - 10 };
+
+        const exclude = [rel.from, rel.to];
+        if (fromComp) exclude.push(...this.getAncestorPath(fromComp.name));
+        if (toComp) exclude.push(...this.getAncestorPath(toComp.name));
+
+        const obstacle = this.findObstacle(start, end, exclude);
+        if (obstacle) {
+            const dx = endCenter.x - startCenter.x;
+            const dy = endCenter.y - startCenter.y;
+            const isHorizontal = rel.direction ?
+                (rel.direction === 'left' || rel.direction === 'right') :
+                (Math.abs(dx) > Math.abs(dy));
+
+            let control1 = { x: 0, y: 0 };
+            let control2 = { x: 0, y: 0 };
+            let detourDirection: 'right' | 'left' | 'up' | 'down' = 'right';
+
+            if (isHorizontal) {
+                let detourY = 0;
+                if (dy >= 0) {
+                    detourY = obstacle.y + obstacle.height + 80;
+                    detourDirection = 'down';
+                } else {
+                    detourY = obstacle.y - 80;
+                    detourDirection = 'up';
+                }
+                control1 = { x: startCenter.x, y: detourY };
+                control2 = { x: endCenter.x, y: detourY };
+            } else {
+                let detourX = 0;
+                if (dx >= 0) {
+                    detourX = obstacle.x + obstacle.width + 80;
+                    detourDirection = 'right';
+                } else {
+                    detourX = obstacle.x - 80;
+                    detourDirection = 'left';
+                }
+                control1 = { x: detourX, y: startCenter.y };
+                control2 = { x: detourX, y: endCenter.y };
+            }
+
+            // Determine the best start side
+            let startProxyTarget = { ...control1 };
+            if (isHorizontal) {
+                // For horizontal arrows, we generally want to exit from the side (left/right)
+                // matching the target direction, even if we detour vertically.
+                if (dx > 0) startProxyTarget = { x: startCenter.x + 10000, y: startCenter.y };
+                else startProxyTarget = { x: startCenter.x - 10000, y: startCenter.y };
+            } else {
+                // For vertical arrows, we want to exit from the side of the detour
+                if (detourDirection === 'right') startProxyTarget = { x: startCenter.x + 10000, y: startCenter.y };
+                else if (detourDirection === 'left') startProxyTarget = { x: startCenter.x - 10000, y: startCenter.y };
+                else if (detourDirection === 'down') startProxyTarget = { x: startCenter.x, y: startCenter.y + 10000 };
+                else if (detourDirection === 'up') startProxyTarget = { x: startCenter.x, y: startCenter.y - 10000 };
+            }
+
+            start = this.getIntersection(startCenter, startProxyTarget, fromRect, startPad, fromComp?.type === 'interface');
+
+            // Determine the best end side
+            let endProxyTarget = { ...control2 };
+            if (isHorizontal) {
+                // For horizontal arrows, we generally want to enter from the side (left/right)
+                // opposite to the target direction.
+                if (dx > 0) endProxyTarget = { x: endCenter.x - 10000, y: endCenter.y };
+                else endProxyTarget = { x: endCenter.x + 10000, y: endCenter.y };
+            } else {
+                // For vertical arrows, enter from the side of the detour
+                if (detourDirection === 'right') endProxyTarget = { x: endCenter.x + 10000, y: endCenter.y };
+                else if (detourDirection === 'left') endProxyTarget = { x: endCenter.x - 10000, y: endCenter.y };
+                else if (detourDirection === 'down') endProxyTarget = { x: endCenter.x, y: endCenter.y + 10000 };
+                else if (detourDirection === 'up') endProxyTarget = { x: endCenter.x, y: endCenter.y - 10000 };
+            }
+
+            end = this.getIntersection(endCenter, endProxyTarget, toRect, endPad, toComp?.type === 'interface');
+
+            path = [start, control1, control2, end];
+            // Cubic Bezier midpoint at t=0.5
+            labelPos = {
+                x: (start.x + 3 * control1.x + 3 * control2.x + end.x) / 8,
+                y: (start.y + 3 * control1.y + 3 * control2.y + end.y) / 8 - 10
+            };
+        }
 
         return {
             relationship: rel,
-            path: [start, end],
-            labelPosition: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - 10 }
+            path: path,
+            labelPosition: labelPos
         };
     }
 
