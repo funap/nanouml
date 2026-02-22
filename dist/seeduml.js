@@ -29,6 +29,30 @@ var seeduml = (() => {
     renderSequenceDiagram: () => renderSequenceDiagram
   });
 
+  // src/core/RichText.ts
+  function formatRichText(text) {
+    if (!text) return "";
+    let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+    escaped = escaped.replace(/&lt;b&gt;(.*?)&lt;\/b&gt;/gi, '<tspan font-weight="bold">$1</tspan>');
+    escaped = escaped.replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/gi, '<tspan text-decoration="underline">$1</tspan>');
+    escaped = escaped.replace(/&lt;i&gt;(.*?)&lt;\/i&gt;/gi, '<tspan font-style="italic">$1</tspan>');
+    escaped = escaped.replace(/&lt;s&gt;(.*?)&lt;\/s&gt;/gi, '<tspan text-decoration="line-through">$1</tspan>');
+    escaped = escaped.replace(/&lt;font\s+color=(?:&quot;)?(.*?)(?:&quot;)?&gt;(.*?)&lt;\/font&gt;/gi, '<tspan fill="$1">$2</tspan>');
+    escaped = escaped.replace(/&lt;b&gt;(?!.*&lt;\/b&gt;)(.*)/gi, '<tspan font-weight="bold">$1</tspan>');
+    escaped = escaped.replace(/&lt;font\s+color=(?:&quot;)?(.*?)(?:&quot;)?&gt;(?!.*&lt;\/font&gt;)(.*)/gi, '<tspan fill="$1">$2</tspan>');
+    escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<tspan font-weight="bold">$1</tspan>');
+    escaped = escaped.replace(/\/\/(.*?)\/\//g, '<tspan font-style="italic">$1</tspan>');
+    escaped = escaped.replace(/""(.*?)""/g, '<tspan font-family="monospace">$1</tspan>');
+    escaped = escaped.replace(/--(.*?)--/g, '<tspan text-decoration="line-through">$1</tspan>');
+    escaped = escaped.replace(/__(.*?)__/g, '<tspan text-decoration="underline">$1</tspan>');
+    escaped = escaped.replace(/~~(.*?)~~/g, '<tspan style="text-decoration: underline; text-decoration-style: wavy">$1</tspan>');
+    return escaped;
+  }
+  function decodeUnicode(text) {
+    if (!text) return "";
+    return text.replace(/<U\+([0-9a-fA-F]{4})>/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  }
+
   // src/diagrams/sequence/SequenceDiagram.ts
   var SequenceDiagram = class {
     constructor() {
@@ -85,9 +109,10 @@ var seeduml = (() => {
         } else {
           msgNumber = rawNumber;
         }
-        text = text.replace(/%autonumber%/g, rawNumber);
-        text = text.replace(/<U\+([0-9a-fA-F]{4})>/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
       }
+      const rawNum = this.currentAutonumbers.join(this.autonumberDelimiter);
+      text = text.replace(/%autonumber%/g, rawNum);
+      text = decodeUnicode(text);
       this.messages.push({ from, to, text, type, step, arrowHead, startHead, color, bidirectional, number: msgNumber });
       if (this.autoactivateEnabled && from !== to && type === "arrow") {
         this.activate(to, step, step);
@@ -195,11 +220,9 @@ var seeduml = (() => {
     addNote(text, position, participants, color, shape = "folder", step) {
       const noteStep = step !== void 0 ? step : this.currentStep++;
       const owner = this.groupStack.length > 0 ? this.groupStack[this.groupStack.length - 1] : void 0;
-      if (this.autonumberConfig) {
-        const rawNumber = this.currentAutonumbers.join(this.autonumberDelimiter);
-        text = text.replace(/%autonumber%/g, rawNumber);
-        text = text.replace(/<U\+([0-9a-fA-F]{4})>/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-      }
+      const rawNumber = this.currentAutonumbers.join(this.autonumberDelimiter);
+      text = text.replace(/%autonumber%/g, rawNumber);
+      text = decodeUnicode(text);
       this.notes.push({
         text,
         position,
@@ -1291,8 +1314,8 @@ var seeduml = (() => {
     }
   };
 
-  // src/diagrams/sequence/SequenceSVGRenderer.ts
-  var SequenceSVGRenderer = class {
+  // src/diagrams/sequence/SequenceRenderer.ts
+  var SequenceRenderer = class {
     constructor() {
       this.theme = defaultTheme;
       this.lastSvg = "";
@@ -1675,21 +1698,7 @@ var seeduml = (() => {
       return color;
     }
     formatRichText(text) {
-      let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
-      escaped = escaped.replace(/&lt;b&gt;(.*?)&lt;\/b&gt;/gi, '<tspan font-weight="bold">$1</tspan>');
-      escaped = escaped.replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/gi, '<tspan text-decoration="underline">$1</tspan>');
-      escaped = escaped.replace(/&lt;i&gt;(.*?)&lt;\/i&gt;/gi, '<tspan font-style="italic">$1</tspan>');
-      escaped = escaped.replace(/&lt;s&gt;(.*?)&lt;\/s&gt;/gi, '<tspan text-decoration="line-through">$1</tspan>');
-      escaped = escaped.replace(/&lt;font\s+color=(?:&quot;)?(.*?)(?:&quot;)?&gt;(.*?)&lt;\/font&gt;/gi, '<tspan fill="$1">$2</tspan>');
-      escaped = escaped.replace(/&lt;b&gt;(?!.*&lt;\/b&gt;)(.*)/gi, '<tspan font-weight="bold">$1</tspan>');
-      escaped = escaped.replace(/&lt;font\s+color=(?:&quot;)?(.*?)(?:&quot;)?&gt;(?!.*&lt;\/font&gt;)(.*)/gi, '<tspan fill="$1">$2</tspan>');
-      escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<tspan font-weight="bold">$1</tspan>');
-      escaped = escaped.replace(/\/\/(.*?)\/\//g, '<tspan font-style="italic">$1</tspan>');
-      escaped = escaped.replace(/""(.*?)""/g, '<tspan font-family="monospace">$1</tspan>');
-      escaped = escaped.replace(/--(.*?)--/g, '<tspan text-decoration="line-through">$1</tspan>');
-      escaped = escaped.replace(/__(.*?)__/g, '<tspan text-decoration="underline">$1</tspan>');
-      escaped = escaped.replace(/~~(.*?)~~/g, '<tspan style="text-decoration: underline; text-decoration-style: wavy">$1</tspan>');
-      return escaped;
+      return formatRichText(text);
     }
     drawNoteShape(svg, x, y, w, h, shape, color, text) {
       let noteSvg = "";
@@ -2116,6 +2125,40 @@ var seeduml = (() => {
         maxY += offsetY;
       }
       const relationships = this.diagram.relationships.map((r) => this.routeRelationship(r));
+      relationships.forEach((rel) => {
+        rel.path.forEach((p) => {
+          minX = Math.min(minX, p.x);
+          minY = Math.min(minY, p.y);
+          maxX = Math.max(maxX, p.x);
+          maxY = Math.max(maxY, p.y);
+        });
+      });
+      const finalOffsetX = this.theme.padding - minX;
+      const finalOffsetY = this.theme.padding - minY;
+      if (finalOffsetX > 0 || finalOffsetY > 0) {
+        const dx = Math.max(0, finalOffsetX);
+        const dy = Math.max(0, finalOffsetY);
+        componentNodes.forEach((node) => {
+          node.x += dx;
+          node.y += dy;
+        });
+        notes.forEach((note) => {
+          note.x += dx;
+          note.y += dy;
+        });
+        relationships.forEach((rel) => {
+          rel.path.forEach((p) => {
+            p.x += dx;
+            p.y += dy;
+          });
+          if (rel.labelPosition) {
+            rel.labelPosition.x += dx;
+            rel.labelPosition.y += dy;
+          }
+        });
+        maxX += dx;
+        maxY += dy;
+      }
       return {
         components: componentNodes,
         relationships,
@@ -2138,6 +2181,7 @@ var seeduml = (() => {
           const fromRect = this.layoutMap.get(rel.from);
           const toRect = this.layoutMap.get(rel.to);
           if (!fromRect || !toRect) return;
+          if (Math.abs(toRect.y - fromRect.y) < 10) return;
           const fromX = fromRect.x + fromRect.width / 2;
           const toX = toRect.x + toRect.width / 2;
           const error = toX - fromX;
@@ -2320,25 +2364,84 @@ var seeduml = (() => {
           }
         }
       });
+      const adj = /* @__PURE__ */ new Map();
       if (relevantRels.length > 0) {
-        const adj = /* @__PURE__ */ new Map();
+        const targetClaimed = /* @__PURE__ */ new Set();
         relevantRels.forEach((r) => {
           const dir = r.direction || "down";
-          if (!adj.has(r.from)) adj.set(r.from, []);
-          adj.get(r.from).push({ target: r.to, direction: dir });
-          if (!adj.has(r.to)) adj.set(r.to, []);
-          const revDir = dir === "down" ? "up" : dir === "up" ? "down" : dir === "right" ? "left" : "right";
-          adj.get(r.to).push({ target: r.from, direction: revDir });
+          if (!targetClaimed.has(r.to)) {
+            targetClaimed.add(r.to);
+            if (!adj.has(r.from)) adj.set(r.from, []);
+            adj.get(r.from).push({ target: r.to, direction: dir });
+          }
         });
         const queue = [];
+        const visited = /* @__PURE__ */ new Set();
+        const processQueue = () => {
+          while (queue.length > 0) {
+            const current = queue.shift();
+            if (visited.has(current)) continue;
+            visited.add(current);
+            const currentPos = gridPos.get(current);
+            const neighbors = adj.get(current) || [];
+            const byDir = /* @__PURE__ */ new Map();
+            neighbors.forEach((n) => {
+              if (!gridPos.has(n.target)) {
+                if (!byDir.has(n.direction)) byDir.set(n.direction, []);
+                byDir.get(n.direction).push(n.target);
+              }
+            });
+            byDir.forEach((targets, dir) => {
+              const sortedTargets = targets.sort((a, b) => {
+                const compA = components.find((c) => c.name === a);
+                const compB = components.find((c) => c.name === b);
+                return (compA?.declarationOrder ?? 0) - (compB?.declarationOrder ?? 0);
+              });
+              sortedTargets.forEach((target, i) => {
+                let row = currentPos.row;
+                let col = currentPos.col;
+                const offset = targets.length === 1 ? 0 : i - (targets.length - 1) / 2;
+                switch (dir) {
+                  case "down":
+                    row++;
+                    break;
+                  case "up":
+                    row--;
+                    break;
+                  case "right":
+                    col++;
+                    break;
+                  case "left":
+                    col--;
+                    break;
+                }
+                while (isOccupied({ row, col }, gridPos)) {
+                  if (dir === "down" || dir === "up") col++;
+                  else if (dir === "left") col--;
+                  else if (dir === "right") col++;
+                  else row++;
+                }
+                gridPos.set(target, { row, col });
+                queue.push(target);
+              });
+            });
+          }
+        };
         for (const name of gridPos.keys()) {
           queue.push(name);
         }
+        processQueue();
         const roots = components.filter((c) => !relevantRels.some((r) => r.to === c.name)).sort((a, b) => a.declarationOrder - b.declarationOrder);
-        if (queue.length === 0) {
-          const startNode = roots.length > 0 ? roots[0].name : relevantRels[0].from;
+        if (gridPos.size === 0 && roots.length > 0) {
+          const startNode = roots[0].name;
           gridPos.set(startNode, { row: 0, col: 0 });
           queue.push(startNode);
+          processQueue();
+        } else if (gridPos.size === 0 && relevantRels.length > 0) {
+          const startNode = relevantRels[0].from;
+          gridPos.set(startNode, { row: 0, col: 0 });
+          queue.push(startNode);
+          processQueue();
         }
         for (const root of roots) {
           if (!gridPos.has(root.name) && relevantRels.some((r) => r.from === root.name || r.to === root.name)) {
@@ -2346,58 +2449,8 @@ var seeduml = (() => {
             while (isOccupied({ row: 0, col }, gridPos)) col++;
             gridPos.set(root.name, { row: 0, col });
             queue.push(root.name);
+            processQueue();
           }
-        }
-        const visited = /* @__PURE__ */ new Set();
-        while (queue.length > 0) {
-          const current = queue.shift();
-          if (visited.has(current)) continue;
-          visited.add(current);
-          const currentPos = gridPos.get(current);
-          const neighbors = adj.get(current) || [];
-          const byDir = /* @__PURE__ */ new Map();
-          neighbors.forEach((n) => {
-            if (!gridPos.has(n.target)) {
-              if (!byDir.has(n.direction)) byDir.set(n.direction, []);
-              byDir.get(n.direction).push(n.target);
-            }
-          });
-          byDir.forEach((targets, dir) => {
-            const sortedTargets = targets.sort((a, b) => {
-              const compA = components.find((c) => c.name === a);
-              const compB = components.find((c) => c.name === b);
-              return (compA?.declarationOrder ?? 0) - (compB?.declarationOrder ?? 0);
-            });
-            sortedTargets.forEach((target, i) => {
-              let row = currentPos.row;
-              let col = currentPos.col;
-              const offset = targets.length === 1 ? 0 : i - (targets.length - 1) / 2;
-              switch (dir) {
-                case "down":
-                  row++;
-                  col += Math.round(offset * 1.5);
-                  break;
-                case "up":
-                  row--;
-                  col += Math.round(offset * 1.5);
-                  break;
-                case "right":
-                  col++;
-                  row += Math.round(offset * 1.5);
-                  break;
-                case "left":
-                  col--;
-                  row += Math.round(offset * 1.5);
-                  break;
-              }
-              while (isOccupied({ row, col }, gridPos)) {
-                if (dir === "down" || dir === "up") col++;
-                else row++;
-              }
-              gridPos.set(target, { row, col });
-              queue.push(target);
-            });
-          });
         }
       }
       const unpositioned = components.filter((c) => !gridPos.has(c.name)).sort((a, b) => a.declarationOrder - b.declarationOrder);
@@ -2420,11 +2473,17 @@ var seeduml = (() => {
       });
       components.forEach((comp) => {
         if (hasPositionBinding.has(comp.name)) return;
-        const rels = relevantRels.filter((r) => r.from === comp.name && r.direction === "down");
-        if (rels.length > 0) {
+        const neighbors = (adj.get(comp.name) || []).filter((n) => n.direction === "down");
+        if (neighbors.length > 0) {
           const pos = gridPos.get(comp.name);
           if (pos) {
-            const childrenCols = rels.map((r) => gridPos.get(r.to)?.col).filter((c) => c !== void 0);
+            const childrenCols = neighbors.map((n) => {
+              const targetPos = gridPos.get(n.target);
+              if (targetPos && targetPos.row !== pos.row) {
+                return targetPos.col;
+              }
+              return void 0;
+            }).filter((c) => c !== void 0);
             if (childrenCols.length > 0) {
               const avgCol = childrenCols.reduce((a, b) => a + b, 0) / childrenCols.length;
               pos.col = Math.round(avgCol);
@@ -2478,11 +2537,6 @@ var seeduml = (() => {
       for (let r = 1; r <= maxRow; r++) {
         rowStarts[r] = rowStarts[r - 1] + rowHeights[r - 1] + this.theme.componentGapY;
       }
-      console.log("--- Grid Layout Details ---");
-      console.log("Col Widths:", colWidths);
-      console.log("Col Starts:", colStarts);
-      console.log("Row Heights:", rowHeights);
-      console.log("Row Starts:", rowStarts);
       components.forEach((comp) => {
         const pos = gridPos.get(comp.name);
         const size = sizeMap.get(comp.name);
@@ -2553,6 +2607,43 @@ var seeduml = (() => {
       });
       return result;
     }
+    findObstacle(start, end, excludeNames) {
+      const excludeSet = new Set(excludeNames);
+      let firstObstacle = void 0;
+      let minDist = Infinity;
+      for (const [name, rect] of this.layoutMap.entries()) {
+        if (excludeSet.has(name)) continue;
+        if (this.segmentIntersectsRect(start, end, rect)) {
+          const cx = rect.x + rect.width / 2;
+          const cy = rect.y + rect.height / 2;
+          const d = (cx - start.x) ** 2 + (cy - start.y) ** 2;
+          if (d < minDist) {
+            minDist = d;
+            firstObstacle = rect;
+          }
+        }
+      }
+      return firstObstacle;
+    }
+    segmentIntersectsRect(p1, p2, rect) {
+      const minX = Math.min(p1.x, p2.x);
+      const maxX = Math.max(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      const maxY = Math.max(p1.y, p2.y);
+      if (maxX < rect.x || minX > rect.x + rect.width || maxY < rect.y || minY > rect.y + rect.height) {
+        return false;
+      }
+      const cx = rect.x + rect.width / 2;
+      const cy = rect.y + rect.height / 2;
+      const l2 = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
+      if (l2 === 0) return false;
+      let t = ((cx - p1.x) * (p2.x - p1.x) + (cy - p1.y) * (p2.y - p1.y)) / l2;
+      t = Math.max(0, Math.min(1, t));
+      const px = p1.x + t * (p2.x - p1.x);
+      const py = p1.y + t * (p2.y - p1.y);
+      const margin = 5;
+      return px >= rect.x - margin && px <= rect.x + rect.width + margin && py >= rect.y - margin && py <= rect.y + rect.height + margin;
+    }
     routeRelationship(rel) {
       let fromRect = this.layoutMap.get(rel.from);
       if (!fromRect) {
@@ -2577,12 +2668,75 @@ var seeduml = (() => {
       };
       const startPad = fromComp?.type === "interface" ? this.theme.interfaceRadius : 0;
       const endPad = toComp?.type === "interface" ? this.theme.interfaceRadius : 0;
-      const start = this.getIntersection(startCenter, endCenter, fromRect, startPad, fromComp?.type === "interface");
-      const end = this.getIntersection(endCenter, startCenter, toRect, endPad, toComp?.type === "interface");
+      let start = this.getIntersection(startCenter, endCenter, fromRect, startPad, fromComp?.type === "interface");
+      let end = this.getIntersection(endCenter, startCenter, toRect, endPad, toComp?.type === "interface");
+      let path = [start, end];
+      let labelPos = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - 10 };
+      const exclude = [rel.from, rel.to];
+      if (fromComp) exclude.push(...this.getAncestorPath(fromComp.name));
+      if (toComp) exclude.push(...this.getAncestorPath(toComp.name));
+      const obstacle = this.findObstacle(start, end, exclude);
+      if (obstacle) {
+        const dx = endCenter.x - startCenter.x;
+        const dy = endCenter.y - startCenter.y;
+        const isHorizontal = rel.direction ? rel.direction === "left" || rel.direction === "right" : Math.abs(dx) > Math.abs(dy);
+        let control1 = { x: 0, y: 0 };
+        let control2 = { x: 0, y: 0 };
+        let detourDirection = "right";
+        if (isHorizontal) {
+          let detourY = 0;
+          if (dy >= 0) {
+            detourY = obstacle.y + obstacle.height + 40;
+            detourDirection = "down";
+          } else {
+            detourY = obstacle.y - 40;
+            detourDirection = "up";
+          }
+          const spanX = endCenter.x - startCenter.x;
+          control1 = { x: startCenter.x + spanX * 0.2, y: detourY };
+          control2 = { x: startCenter.x + spanX * 0.8, y: detourY };
+        } else {
+          let detourX = 0;
+          if (dx >= 0) {
+            detourX = obstacle.x + obstacle.width + 80;
+            detourDirection = "right";
+          } else {
+            detourX = obstacle.x - 80;
+            detourDirection = "left";
+          }
+          const spanY = endCenter.y - startCenter.y;
+          control1 = { x: detourX, y: startCenter.y + spanY * 0.2 };
+          control2 = { x: detourX, y: startCenter.y + spanY * 0.8 };
+        }
+        let proxyX = 0, proxyY = 0;
+        if (detourDirection === "right") proxyX = 1e4;
+        else if (detourDirection === "left") proxyX = -1e4;
+        else if (detourDirection === "down") proxyY = 1e4;
+        else if (detourDirection === "up") proxyY = -1e4;
+        start = this.getIntersection(
+          startCenter,
+          { x: startCenter.x + proxyX, y: startCenter.y + proxyY },
+          fromRect,
+          startPad,
+          fromComp?.type === "interface"
+        );
+        end = this.getIntersection(
+          endCenter,
+          { x: endCenter.x + proxyX, y: endCenter.y + proxyY },
+          toRect,
+          endPad,
+          toComp?.type === "interface"
+        );
+        path = [start, control1, control2, end];
+        labelPos = {
+          x: (start.x + 3 * control1.x + 3 * control2.x + end.x) / 8,
+          y: (start.y + 3 * control1.y + 3 * control2.y + end.y) / 8 - 10
+        };
+      }
       return {
         relationship: rel,
-        path: [start, end],
-        labelPosition: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - 10 }
+        path,
+        labelPosition: labelPos
       };
     }
     getIntersection(center, target, rect, padding = 0, isCircle = false) {
@@ -2774,14 +2928,14 @@ var seeduml = (() => {
     fontFamily: "'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
   };
 
-  // src/diagrams/component/ComponentSVGRenderer.ts
-  var ComponentSVGRenderer = class {
+  // src/diagrams/component/ComponentRenderer.ts
+  var ComponentRenderer = class {
     constructor() {
       this.theme = defaultTheme2;
     }
     render(diagram) {
       if (diagram.type !== "component") {
-        throw new Error("ComponentSVGRenderer only supports component diagrams");
+        throw new Error("ComponentRenderer only supports component diagrams");
       }
       const componentDiagram = diagram;
       this.layoutEngine = new ComponentLayout(componentDiagram, this.theme);
@@ -2859,7 +3013,7 @@ var seeduml = (() => {
       const lines = label.split(/\\n|\n/);
       const iconW = 14;
       const iconH = 18;
-      const iconX = 6;
+      const iconX = width - 20;
       const iconY = 6;
       const tabW = 8;
       const tabH = 5;
@@ -2878,7 +3032,7 @@ var seeduml = (() => {
                 <rect x="${x + iconX - tabW / 2}" y="${y + iconY + 3}" width="${tabW}" height="${tabH}" fill="${fill}" stroke="${this.theme.colors.componentIcon}" stroke-width="1" rx="0.5" />
                 <rect x="${x + iconX - tabW / 2}" y="${y + iconY + 10}" width="${tabW}" height="${tabH}" fill="${fill}" stroke="${this.theme.colors.componentIcon}" stroke-width="1" rx="0.5" />
                 <text x="${textX}" y="${textY}" text-anchor="${anchor}" dominant-baseline="middle" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
-                    ${lines.map((line, i) => `<tspan x="${textX}" dy="${i === 0 ? hasChildren ? 0 : -((lines.length - 1) * 0.6) + "em" : "1.2em"}">${this.escapeXml(line)}</tspan>`).join("")}
+                    ${lines.map((line, i) => `<tspan x="${textX}" dy="${i === 0 ? hasChildren ? 0 : -((lines.length - 1) * 0.6) + "em" : "1.2em"}">${formatRichText(line)}</tspan>`).join("")}
                 </text>
             </g>
         `;
@@ -2894,7 +3048,7 @@ var seeduml = (() => {
             <g>
                 <circle cx="${cx}" cy="${cy}" r="${r}" fill="${this.theme.colors.interfaceFill}" stroke="${this.theme.colors.defaultStroke}" stroke-width="1.5"/>
                 <text x="${cx}" y="${cy + r + 16}" text-anchor="middle" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
-                    ${lines.map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : "1.2em"}">${this.escapeXml(line)}</tspan>`).join("")}
+                    ${lines.map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : "1.2em"}">${formatRichText(line)}</tspan>`).join("")}
                 </text>
             </g>
         `;
@@ -2914,7 +3068,7 @@ var seeduml = (() => {
                 <rect x="${x}" y="${y + tabH}" width="${width}" height="${height - tabH}" fill="${this.theme.colors.packageFill}" fill-opacity="0.25" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" rx="1" />
                 <!-- Label in tab -->
                 <text x="${x + 10}" y="${y + 15}" text-anchor="start" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
-                    ${this.escapeXml(label)}
+                    ${formatRichText(label)}
                 </text>
             </g>
         `;
@@ -2933,7 +3087,7 @@ var seeduml = (() => {
                 <!-- Front face -->
                 <rect x="${x}" y="${y + d}" width="${width}" height="${height}" fill="${this.theme.colors.nodeFill}" fill-opacity="0.35" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
                 <text x="${x + 10}" y="${y + d + 18}" text-anchor="start" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
-                    \xABnode\xBB ${this.escapeXml(label)}
+                    \xABnode\xBB ${formatRichText(label)}
                 </text>
             </g>
         `;
@@ -2951,7 +3105,7 @@ var seeduml = (() => {
                 <!-- Folder body -->
                 <rect x="${x}" y="${y + tabH}" width="${width}" height="${height - tabH}" fill="${this.theme.colors.folderFill}" fill-opacity="0.3" stroke="${this.theme.colors.defaultStroke}" stroke-width="1.3" rx="1" />
                 <text x="${x + 10}" y="${y + tabH + 18}" text-anchor="start" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
-                    ${this.escapeXml(label)}
+                    ${formatRichText(label)}
                 </text>
             </g>
         `;
@@ -2971,7 +3125,7 @@ var seeduml = (() => {
                 <!-- Pentagon name tag -->
                 <polygon points="${x},${y} ${x + tagW},${y} ${x + tagW},${y + tagH - 6} ${x + tagW - 6},${y + tagH} ${x},${y + tagH}" fill="${this.theme.colors.frameFill}" stroke="${this.theme.colors.defaultStroke}" stroke-width="1.3" />
                 <text x="${x + 8}" y="${y + 15}" text-anchor="start" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize - 1}">
-                    ${lines.map((line, i) => `<tspan x="${x + 8}" dy="${i === 0 ? 0 : "1.2em"}">${this.escapeXml(line)}</tspan>`).join("")}
+                    ${lines.map((line, i) => `<tspan x="${x + 8}" dy="${i === 0 ? 0 : "1.2em"}">${formatRichText(line)}</tspan>`).join("")}
                 </text>
             </g>
         `;
@@ -2998,7 +3152,7 @@ var seeduml = (() => {
                     Z
                 " fill="${this.theme.colors.cloudFill}" fill-opacity="0.5" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
                 ${label ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
-                    ${lines.map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? -((lines.length - 1) * 0.6) + "em" : "1.2em"}">${this.escapeXml(line)}</tspan>`).join("")}
+                    ${lines.map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? -((lines.length - 1) * 0.6) + "em" : "1.2em"}">${formatRichText(line)}</tspan>`).join("")}
                 </text>` : ""}
             </g>
         `;
@@ -3021,7 +3175,7 @@ var seeduml = (() => {
                 <!-- Top ellipse (drawn last to overlay body) -->
                 <ellipse cx="${width / 2}" cy="${ry}" rx="${width / 2}" ry="${ry}" fill="${this.theme.colors.databaseFill}" stroke="${this.theme.colors.packageStroke}" stroke-width="1.5" />
                 ${label ? `<text x="${width / 2}" y="${ry + 20}" text-anchor="middle" font-weight="600" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize}">
-                    ${lines.map((line, i) => `<tspan x="${width / 2}" dy="${i === 0 ? 0 : "1.2em"}">${this.escapeXml(line)}</tspan>`).join("")}
+                    ${lines.map((line, i) => `<tspan x="${width / 2}" dy="${i === 0 ? 0 : "1.2em"}">${formatRichText(line)}</tspan>`).join("")}
                 </text>` : ""}
             </g>
         `;
@@ -3036,18 +3190,30 @@ var seeduml = (() => {
       if (relationship.showArrowHead !== false) {
         markerEnd = relationship.type === "dashed" ? "url(#comp-arrow-open)" : "url(#comp-arrow-end)";
       }
+      let d = `M ${start.x} ${start.y}`;
+      if (path.length === 2) {
+        d += ` L ${end.x} ${end.y}`;
+      } else if (path.length === 3) {
+        d += ` Q ${path[1].x} ${path[1].y} ${end.x} ${end.y}`;
+      } else if (path.length === 4) {
+        d += ` C ${path[1].x} ${path[1].y} ${path[2].x} ${path[2].y} ${end.x} ${end.y}`;
+      } else {
+        for (let i = 1; i < path.length; i++) {
+          d += ` L ${path[i].x} ${path[i].y}`;
+        }
+      }
       let labelSvg = "";
       if (rel.labelPosition && relationship.label) {
         labelSvg = `
                 <rect x="${rel.labelPosition.x - relationship.label.length * 3.5 - 4}" y="${rel.labelPosition.y - 10}" width="${relationship.label.length * 7 + 8}" height="16" fill="white" fill-opacity="0.85" rx="3" />
                 <text x="${rel.labelPosition.x}" y="${rel.labelPosition.y}" text-anchor="middle" dominant-baseline="middle" fill="${this.theme.colors.textLight}" font-family="${this.theme.fontFamily}" font-size="11" font-style="italic">
-                    ${this.escapeXml(relationship.label)}
+                    ${formatRichText(relationship.label)}
                 </text>
             `;
       }
       return `
             <g>
-                <line x1="${start.x}" y1="${start.y}" x2="${end.x}" y2="${end.y}" stroke="${this.theme.colors.line}" stroke-width="1.3" stroke-dasharray="${strokeDash}" marker-end="${markerEnd}"/>
+                <path d="${d}" fill="none" stroke="${this.theme.colors.line}" stroke-width="1.3" stroke-dasharray="${strokeDash}" marker-end="${markerEnd}"/>
                 ${labelSvg}
             </g>
         `;
@@ -3060,13 +3226,10 @@ var seeduml = (() => {
                 <path d="M0,0 L${width - fold},0 L${width},${fold} L${width},${height} L0,${height} Z" fill="${this.theme.colors.noteFill}" stroke="${this.theme.colors.noteStroke}" stroke-width="1" />
                 <path d="M${width - fold},0 L${width - fold},${fold} L${width},${fold}" fill="none" stroke="${this.theme.colors.noteStroke}" stroke-width="1" />
                 <text x="10" y="18" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize - 1}">
-                    ${note.text.split("\n").map((line, i) => `<tspan x="10" dy="${i === 0 ? 0 : "1.3em"}">${this.escapeXml(line)}</tspan>`).join("")}
+                    ${note.text.split("\n").map((line, i) => `<tspan x="10" dy="${i === 0 ? 0 : "1.3em"}">${formatRichText(line)}</tspan>`).join("")}
                 </text>
             </g>
         `;
-    }
-    escapeXml(text) {
-      return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
     renderPort(node, diagram, layoutResult) {
       const { x, y, width, height, component } = node;
@@ -3107,22 +3270,26 @@ var seeduml = (() => {
             }
           }
           const label = component.label || component.name;
-          labelSvg = `<text x="${tx}" y="${ty}" text-anchor="${anchor}" dominant-baseline="${baseline}" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize - 2}">${this.escapeXml(label)}</text>`;
+          labelSvg = `<text x="${tx}" y="${ty}" text-anchor="${anchor}" dominant-baseline="${baseline}" fill="${this.theme.colors.text}" font-family="${this.theme.fontFamily}" font-size="${this.theme.fontSize - 2}">${formatRichText(label)}</text>`;
         }
       }
       return `
             <g>
-                <rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${fill}" stroke="${this.theme.colors.defaultStroke}" stroke-width="1" />
+                <rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${this.theme.colors.defaultFill}" stroke="${this.theme.colors.defaultStroke}" stroke-width="1" />
                 ${labelSvg}
             </g>
         `;
+    }
+    normalizeColor(color, defaultColor) {
+      if (!color) return defaultColor;
+      return color;
     }
   };
 
   // src/index.ts
   function renderSequenceDiagram(content) {
     const parser = new SequenceParser();
-    const renderer = new SequenceSVGRenderer();
+    const renderer = new SequenceRenderer();
     try {
       const diagram = parser.parse(content);
       return renderer.render(diagram);
@@ -3132,7 +3299,7 @@ var seeduml = (() => {
   }
   function renderComponentDiagram(content) {
     const parser = new ComponentParser();
-    const renderer = new ComponentSVGRenderer();
+    const renderer = new ComponentRenderer();
     try {
       const diagram = parser.parse(content);
       return renderer.render(diagram);
