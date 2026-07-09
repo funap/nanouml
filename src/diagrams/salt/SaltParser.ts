@@ -126,6 +126,10 @@ export function preprocessSalt(content: string, diagram: SaltDiagram): string {
             continue;
         }
 
+        if (line.toLowerCase().startsWith('skinparam')) {
+            continue;
+        }
+
         const handMatch = line.match(/^!option\s+handwritten\s+true/i);
         if (handMatch) {
             diagram.handwritten = true;

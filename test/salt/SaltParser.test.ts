@@ -339,6 +339,7 @@ describe('Salt Diagram Parser & Renderer', () => {
         end legend
         scale 2
         skinparam Backgroundcolor palegreen
+        skinparam defaultFontName monospaced
         !option handwritten true
         
         {
