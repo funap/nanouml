@@ -53,7 +53,7 @@ export class SequenceRenderer implements Renderer<SequenceDiagram> {
             const cleanTextLength = mainframeText.replace(/\*\*|\/\/|__/g, '').length;
             const tabWidth = Math.max(100, cleanTextLength * 8 + 30);
             const tabHeight = 25;
-            const tabPath = `M ${x1} ${y1} L ${x1 + tabWidth} ${y1} L ${x1 + tabWidth - 8} ${y1 + tabHeight} L ${x1} ${y1 + tabHeight} Z`;
+            const tabPath = `M ${x1} ${y1} L ${x1 + tabWidth} ${y1} L ${x1 + tabWidth} ${y1 + 15} L ${x1 + tabWidth - 10} ${y1 + tabHeight} L ${x1} ${y1 + tabHeight} Z`;
             svg += `<path d="${tabPath}" fill="#ECECEF" stroke="${this.theme.colors.defaultStroke}" stroke-width="2" />`;
             svg += `<text x="${x1 + 10}" y="${y1 + tabHeight / 2}" dominant-baseline="middle" font-size="${this.theme.fontSize}" font-weight="bold" fill="${this.theme.colors.text}">${this.formatRichText(mainframeText)}</text>`;
         }

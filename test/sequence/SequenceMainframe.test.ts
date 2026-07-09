@@ -30,7 +30,7 @@ describe('Sequence Diagram Mainframe support', () => {
         expect(svg).toContain('<rect x="8" y="8"');
 
         // 3. Should have the mainframe tab path
-        expect(svg).toContain('<path d="M 8 8 L');
+        expect(svg).toContain('<path d="M 8 8 L 190 8 L 190 23 L 180 33 L 8 33 Z"');
 
         // 4. Should contain the mainframe label with rich-text bold formatting
         expect(svg).toContain('font-weight="bold"');
