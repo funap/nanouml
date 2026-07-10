@@ -180,6 +180,12 @@ interface Token {
     style?: string;
     open?: boolean;
     items?: string[];
+    /** Parsed from <width:N> tag in text */
+    minWidth?: number;
+    /** Parsed from <height:N> tag in text */
+    minHeight?: number;
+    /** Column widths parsed from {#:N,N,N} syntax */
+    columnWidths?: (number | undefined)[];
 }
 
 class SaltTokenizer {
@@ -318,10 +324,51 @@ class SaltTokenizer {
 
         if (['+', '-', '!', '#'].includes(next)) {
             this.advance();
+            const styleChar = next;
+            // Check for column-width hint: {#:200,150,80 or {+:100,200
+            if (this.peek() === ':') {
+                this.advance(); // consume ':'
+                const columnWidths = this.scanColumnWidths();
+                return { type: 'LBRACE_GRID', value: '{' + styleChar, style: styleChar, columnWidths };
+            }
             return { type: 'LBRACE_GRID', value: '{' + next, style: next };
         }
 
+        // Check for column-width hint on bare grid: {:200,150,80
+        if (next === ':') {
+            this.advance(); // consume ':'
+            const columnWidths = this.scanColumnWidths();
+            return { type: 'LBRACE_GRID', value: '{', style: 'none', columnWidths };
+        }
+
         return { type: 'LBRACE_GRID', value: '{', style: 'none' };
+    }
+
+    /** Parse comma-separated column widths: "200,150,,80" -> [200, 150, undefined, 80] */
+    private scanColumnWidths(): (number | undefined)[] {
+        const widths: (number | undefined)[] = [];
+        let current = '';
+        while (true) {
+            const c = this.peek();
+            // Stop at whitespace (not part of column widths), newline, EOF
+            if (c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\0') break;
+            if (c === ',') {
+                widths.push(current.trim() !== '' && current.trim() !== '*'
+                    ? parseInt(current.trim(), 10) || undefined
+                    : undefined);
+                current = '';
+                this.advance();
+                continue;
+            }
+            current += this.advance();
+        }
+        // push final segment
+        if (current.trim() !== '' || widths.length > 0) {
+            widths.push(current.trim() !== '' && current.trim() !== '*'
+                ? parseInt(current.trim(), 10) || undefined
+                : undefined);
+        }
+        return widths;
     }
 
     private scanInput(): Token {
@@ -451,7 +498,21 @@ class SaltTokenizer {
             if (char === '<' && this.peekNext() === '<') break;
             value += this.advance();
         }
-        return { type: 'TEXT', value: value.trim() };
+        const trimmed = value.trim();
+
+        // Extract <width:N> and <height:N> layout hints from text content
+        const widthMatch = trimmed.match(/<width:(\d+)>/i);
+        const heightMatch = trimmed.match(/<height:(\d+)>/i);
+        const minWidth = widthMatch ? parseInt(widthMatch[1], 10) : undefined;
+        const minHeight = heightMatch ? parseInt(heightMatch[1], 10) : undefined;
+
+        // Strip layout hint tags from displayed text
+        const cleanValue = trimmed
+            .replace(/<width:\d+>/gi, '')
+            .replace(/<height:\d+>/gi, '')
+            .trim();
+
+        return { type: 'TEXT', value: cleanValue, minWidth, minHeight };
     }
 }
 
@@ -556,7 +617,10 @@ class SaltParserEngine {
             return { type: 'separator', style, title: title || undefined };
         }
 
-        return { type: 'label', text: textVal };
+        const labelWidget: import('./SaltDiagram').LabelWidget = { type: 'label', text: textVal };
+        if (token.minWidth !== undefined) labelWidget.minWidth = token.minWidth;
+        if (token.minHeight !== undefined) labelWidget.minHeight = token.minHeight;
+        return labelWidget;
     }
 
     private parseGrid(): Widget {
@@ -576,7 +640,11 @@ class SaltParserEngine {
         }
 
         const lineStyle = parseLineStyle(startToken.style);
-        return this.parseGridBody(lineStyle);
+        const grid = this.parseGridBody(lineStyle);
+        if (startToken.columnWidths && startToken.columnWidths.length > 0) {
+            grid.columnWidths = startToken.columnWidths;
+        }
+        return grid;
     }
 
     private parseGridBody(lineStyle: LineStyle): GridWidget {

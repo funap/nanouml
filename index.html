@@ -2810,6 +2810,22 @@ saltDiagram {
   [Cancel] | [  OK   ]
 }
 @endsalt`
+            },
+            layout_adjustment_extended: {
+                title: "Layout Adjustment (Extended)",
+                code: `@startsalt
+' SnapUML Extension: Use {#:W1,W2,...} to set minimum column widths (px)
+' Also use <width:N> or <height:N> to specify cell minimum sizes invisibly
+{#:120,180,100
+  Name     | "John Doe"              | <width:100>
+  --
+  Email    | "john.doe@example.com"  |
+  --
+  Comment  | <height:60>"Enter text" | <width:100>
+  --
+  [Cancel] | [  OK   ]               |
+}
+@endsalt`
             }
         };
 

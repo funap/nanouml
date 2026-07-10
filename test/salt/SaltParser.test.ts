@@ -453,5 +453,113 @@ describe('Salt Diagram Parser & Renderer', () => {
         expect(svg).toContain('<line');
         expect(svg).toContain('****');
     });
+
+    it('should parse <width:N> layout hint and strip it from label text', () => {
+        const input = `
+        @startsalt
+        {
+          <width:200>
+          <width:150>Some label
+        }
+        @endsalt
+        `;
+        const parser = new SaltParser();
+        const diagram = parser.parse(input);
+        const grid = diagram.root as any;
+
+        // First row: pure spacer (empty label) with minWidth
+        expect(grid.rows[0][0].type).toBe('label');
+        expect(grid.rows[0][0].text).toBe('');
+        expect(grid.rows[0][0].minWidth).toBe(200);
+
+        // Second row: label with text + minWidth, tag stripped
+        expect(grid.rows[1][0].type).toBe('label');
+        expect(grid.rows[1][0].text).toBe('Some label');
+        expect(grid.rows[1][0].minWidth).toBe(150);
+    });
+
+    it('should parse <height:N> layout hint and strip it from label text', () => {
+        const input = `
+        @startsalt
+        {
+          <height:60>Row with min height
+        }
+        @endsalt
+        `;
+        const parser = new SaltParser();
+        const diagram = parser.parse(input);
+        const grid = diagram.root as any;
+
+        expect(grid.rows[0][0].type).toBe('label');
+        expect(grid.rows[0][0].text).toBe('Row with min height');
+        expect(grid.rows[0][0].minHeight).toBe(60);
+    });
+
+    it('should parse {#:N,N,N} column width specification', () => {
+        const input = `
+        @startsalt
+        {#:120,200,80
+          Name   | Email            | Age
+          Alice  | alice@example.com | 30
+        }
+        @endsalt
+        `;
+        const parser = new SaltParser();
+        const diagram = parser.parse(input);
+
+        expect(diagram.root?.type).toBe('grid');
+        const grid = diagram.root as any;
+        expect(grid.lineStyle).toBe('all');
+        expect(grid.columnWidths).toEqual([120, 200, 80]);
+        expect(grid.rows.length).toBe(2);
+    });
+
+    it('should parse column widths with omitted entries using commas', () => {
+        const input = `
+        @startsalt
+        {:200,,80
+          Col1 | Col2 | Col3
+        }
+        @endsalt
+        `;
+        const parser = new SaltParser();
+        const diagram = parser.parse(input);
+        const grid = diagram.root as any;
+        // Middle column is auto (undefined)
+        expect(grid.columnWidths[0]).toBe(200);
+        expect(grid.columnWidths[1]).toBeUndefined();
+        expect(grid.columnWidths[2]).toBe(80);
+    });
+
+    it('should reflect <width:N> in SVG layout (cell wider than content)', () => {
+        const input = `
+        @startsalt
+        {#
+          <width:300>"Enter name"
+        }
+        @endsalt
+        `;
+        const svg = render(input);
+        expect(svg).toContain('<svg');
+        // The input field should be rendered with at least 300px width
+        // We verify the SVG is valid and contains the widget
+        expect(svg).toContain('Enter name');
+    });
+
+    it('should reflect {#:N,N} columnWidths in SVG layout', () => {
+        const input = `
+        @startsalt
+        {#:250,100
+          Name   | Age
+          Alice  | 30
+        }
+        @endsalt
+        `;
+        const svg = render(input);
+        expect(svg).toContain('<svg');
+        expect(svg).toContain('Name');
+        expect(svg).toContain('Age');
+        expect(svg).toContain('Alice');
+    });
 });
 

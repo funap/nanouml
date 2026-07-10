@@ -125,6 +125,15 @@ export function measureWidget(widget: Widget, sprites: Map<string, string[]>): v
             const colWidths = new Array(maxCols).fill(0);
             const rowHeights = new Array(R).fill(0);
 
+            // Apply explicit column widths from {#:N,N,N} syntax as minimums
+            if (w.columnWidths) {
+                for (let c = 0; c < Math.min(w.columnWidths.length, maxCols); c++) {
+                    if (w.columnWidths[c] !== undefined) {
+                        colWidths[c] = Math.max(colWidths[c], w.columnWidths[c] as number);
+                    }
+                }
+            }
+
             for (let r = 0; r < R; r++) {
                 // Check if this row is a separator spanning all columns
                 const isSeparatorRow = rows[r].length === 1 && rows[r][0].type === 'separator';
@@ -134,14 +143,23 @@ export function measureWidget(widget: Widget, sprites: Map<string, string[]>): v
                     if (!child) continue;
 
                     // Row height is max of all child heights in this row
-                    rowHeights[r] = Math.max(rowHeights[r], child.height || 0);
+                    // Also respect minHeight on the child widget
+                    rowHeights[r] = Math.max(
+                        rowHeights[r],
+                        child.height || 0,
+                        child.minHeight || 0
+                    );
 
                     // Col width is max of child widths in this column (skip separators/span indicators)
                     if (!isSeparatorRow && child.type !== 'separator') {
                         if (child.type === 'label' && ((child as LabelWidget).text === '*' || (child as LabelWidget).text === '.')) {
                             // span-left / empty cell contributions are 0
                         } else {
-                            colWidths[c] = Math.max(colWidths[c], child.width || 0);
+                            colWidths[c] = Math.max(
+                                colWidths[c],
+                                child.width || 0,
+                                child.minWidth || 0
+                            );
                         }
                     }
                 }
@@ -291,6 +309,15 @@ export function layoutWidget(
             const colWidths = new Array(maxCols).fill(0);
             const rowHeights = new Array(R).fill(0);
 
+            // Apply explicit column widths from {#:N,N,N} syntax as minimums
+            if (w.columnWidths) {
+                for (let c = 0; c < Math.min(w.columnWidths.length, maxCols); c++) {
+                    if (w.columnWidths[c] !== undefined) {
+                        colWidths[c] = Math.max(colWidths[c], w.columnWidths[c] as number);
+                    }
+                }
+            }
+
             // Recompute widths and heights based on measured values to maintain alignment
             for (let r = 0; r < R; r++) {
                 const isSeparatorRow = rows[r].length === 1 && rows[r][0].type === 'separator';
@@ -298,12 +325,20 @@ export function layoutWidget(
                     const child = rows[r][c];
                     if (!child) continue;
 
-                    rowHeights[r] = Math.max(rowHeights[r], child.height || 0);
+                    rowHeights[r] = Math.max(
+                        rowHeights[r],
+                        child.height || 0,
+                        child.minHeight || 0
+                    );
                     if (!isSeparatorRow && child.type !== 'separator') {
                         if (child.type === 'label' && ((child as LabelWidget).text === '*' || (child as LabelWidget).text === '.')) {
                             // no width contribution
                         } else {
-                            colWidths[c] = Math.max(colWidths[c], child.width || 0);
+                            colWidths[c] = Math.max(
+                                colWidths[c],
+                                child.width || 0,
+                                child.minWidth || 0
+                            );
                         }
                     }
                 }

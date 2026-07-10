@@ -22,6 +22,8 @@ export interface BaseWidget {
     type: WidgetType;
     width?: number;
     height?: number;
+    minWidth?: number;
+    minHeight?: number;
     x?: number;
     y?: number;
 }
@@ -30,6 +32,8 @@ export interface GridWidget extends BaseWidget {
     type: 'grid';
     lineStyle: LineStyle;
     rows: Widget[][];
+    /** Explicit per-column minimum widths (px). undefined means auto-sized. From {#:N,N,N} syntax. */
+    columnWidths?: (number | undefined)[];
 }
 
 export interface GroupBoxWidget extends BaseWidget {
