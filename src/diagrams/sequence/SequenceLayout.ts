@@ -1,5 +1,6 @@
 import { SequenceDiagram, Note, Participant, Message, Activation, Group, Reference, ArrowHead } from './SequenceDiagram';
 import { SequenceTheme } from './SequenceTheme';
+import { getTextWidth } from '../../core/RichText';
 
 export const LAYOUT = {
     // Participant vertical adjustments
@@ -94,8 +95,14 @@ export const LAYOUT = {
 
 export function calculateNoteWidth(text: string): number {
     const lines = text.split('\n');
-    const calculatedWidth = Math.max(...lines.map(l => l.length * LAYOUT.NOTE_CHAR_WIDTH)) + LAYOUT.NOTE_PADDING_X;
+    const calculatedWidth = Math.max(...lines.map(l => getTextWidth(l, 13))) + LAYOUT.NOTE_PADDING_X;
     return Math.max(calculatedWidth, LAYOUT.NOTE_MIN_WIDTH);
+}
+
+export function getMessageTextWidth(text: string): number {
+    if (!text || !text.trim()) return 0;
+    const lines = text.split('\n');
+    return Math.max(...lines.map(l => getTextWidth(l, 13))) + LAYOUT.MESSAGE_PADDING_X;
 }
 
 export function calculateNoteHeight(text: string): number {
@@ -309,8 +316,8 @@ export class LayoutEngine {
 
         // Add space for time constraints if they exist
         if (diagram.timeConstraints.length > 0) {
-            const maxLabelLength = Math.max(...diagram.timeConstraints.map(tc => tc.label.length), 0);
-            const timeConstraintSpace = LAYOUT.TIME_CONSTRAINT_BASE_SPACE + (maxLabelLength * LAYOUT.TIME_CONSTRAINT_CHAR_WIDTH); // arrow + label width
+            const maxLabelWidth = Math.max(...diagram.timeConstraints.map(tc => getTextWidth(tc.label, 12)), 0);
+            const timeConstraintSpace = LAYOUT.TIME_CONSTRAINT_BASE_SPACE + maxLabelWidth;
             totalWidth += timeConstraintSpace;
         }
 
@@ -771,10 +778,10 @@ export class LayoutEngine {
     private calculateParticipantWidth(p: Participant): number {
         const label = (p.label || p.name).replace(/\\n/g, '\n');
         const lines = label.split('\n').map(l => l.trim());
-        let maxLineLength = Math.max(...lines.map(l => l.length));
+        let maxLineWidth = Math.max(...lines.map(l => getTextWidth(l, 13)));
         
         let minWidth = this.theme.participantWidth;
-        let textWidth = maxLineLength * LAYOUT.PARTICIPANT_CHAR_WIDTH + LAYOUT.PARTICIPANT_PADDING_X;
+        let textWidth = maxLineWidth + LAYOUT.PARTICIPANT_PADDING_X;
 
         if (p.stereotype) {
             const parsed = parseStereotype(p.stereotype);
@@ -783,7 +790,7 @@ export class LayoutEngine {
                 if (parsed.text) {
                     stereoText = `«${parsed.text}»`;
                 }
-                let stereoWidth = stereoText.length * LAYOUT.STEREO_CHAR_WIDTH + LAYOUT.STEREO_PADDING_X;
+                let stereoWidth = getTextWidth(stereoText, 11) + LAYOUT.STEREO_PADDING_X;
                 if (parsed.spotChar) {
                     stereoWidth += LAYOUT.STEREO_SPOT_EXTRA;
                 }
@@ -845,8 +852,9 @@ export class LayoutEngine {
                 let rightSpace = LAYOUT.RIGHT_SPACE_BASE;
                 const selfMsg = diagram.messages.find(m => m.step === s && m.from === name && m.to === name);
                 if (selfMsg) {
-                    const textWidth = Math.max(...selfMsg.text.split('\n').map(l => l.length * LAYOUT.MESSAGE_CHAR_WIDTH)) + LAYOUT.MESSAGE_PADDING_X;
-                    rightSpace = LAYOUT.MESSAGE_SELF_DIFF_X + textWidth + LAYOUT.NOTE_COLLISION_GAP;
+                    const textWidth = getMessageTextWidth(selfMsg.text);
+                    const rightReach = LAYOUT.MESSAGE_SELF_DIFF_X + LAYOUT.MESSAGE_SELF_LABEL_OFFSET_X + textWidth + LAYOUT.NOTE_COLLISION_GAP;
+                    rightSpace = Math.max(rightSpace, rightReach - (pWidths[i] / 2));
                 }
                 const activeAlt = diagram.activations.filter(a => a.participantName === name && a.startStep <= s && (a.endStep ?? Infinity) >= s);
                 if (activeAlt.length > 0) {
@@ -883,7 +891,7 @@ export class LayoutEngine {
             const tIdx = participants.findIndex(p => p.name === m.to);
             if (fIdx === -1 || tIdx === -1 || fIdx === tIdx) return;
 
-            const textWidth = Math.max(...m.text.split('\n').map(l => l.length * LAYOUT.MESSAGE_CHAR_WIDTH)) + LAYOUT.MESSAGE_PADDING_X;
+            const textWidth = getMessageTextWidth(m.text);
             const s = Math.min(fIdx, tIdx);
             const e = Math.max(fIdx, tIdx);
             let currentSpace = 0;
@@ -993,9 +1001,8 @@ export class LayoutEngine {
                         );
                         let selfMsgRightOffset = 0;
                         if (selfMessage) {
-                            const textLines = selfMessage.text.split('\n');
-                            const textWidth = Math.max(...textLines.map(l => l.length * LAYOUT.MESSAGE_CHAR_WIDTH)) + LAYOUT.MESSAGE_PADDING_X;
-                            selfMsgRightOffset = LAYOUT.MESSAGE_SELF_DIFF_X + textWidth;
+                            const textWidth = getMessageTextWidth(selfMessage.text);
+                            selfMsgRightOffset = LAYOUT.MESSAGE_SELF_DIFF_X + LAYOUT.MESSAGE_SELF_LABEL_OFFSET_X + textWidth;
                         }
 
                         // Also account for activations
@@ -1058,8 +1065,7 @@ export class LayoutEngine {
             const fromIdx = participants.findIndex(p => p.name === m.from);
             const toIdx = participants.findIndex(p => p.name === m.to);
             
-            const textLines = m.text.split('\n');
-            const textWidth = Math.max(...textLines.map(l => l.length * LAYOUT.MESSAGE_CHAR_WIDTH)) + LAYOUT.MESSAGE_PADDING_X; // simplified calc
+            const textWidth = getMessageTextWidth(m.text);
 
             if (fromIdx !== -1 && fromIdx === toIdx) {
                 const cx = relpCenterX[fromIdx];

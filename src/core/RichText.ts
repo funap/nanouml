@@ -47,3 +47,75 @@ export function decodeUnicode(text: string): string {
     if (!text) return '';
     return text.replace(/<U\+([0-9a-fA-F]{4})>/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 }
+
+/**
+ * Strips HTML-like tags, markdown formatting tags, and decodes unicode escapes to return plain text.
+ */
+export function stripRichText(text: string): string {
+    if (!text) return '';
+    let decoded = decodeUnicode(text);
+    // Remove HTML-like tags: <b>, </b>, <i>, </i>, <u>, </u>, <s>, </s>, <font ...>, </font>, etc.
+    decoded = decoded.replace(/<[^>]*>/g, '');
+    // Remove markdown formatting: **, //, __, --, ~~, ""
+    decoded = decoded.replace(/\*\*|\/\/|__|--|~~|""/g, '');
+    return decoded;
+}
+
+let cachedCanvasCtx: any = undefined;
+
+/**
+ * Calculates string width precisely.
+ * If running in a browser environment with Canvas available, uses Canvas measureText.
+ * Otherwise, uses character-by-character width estimation accounting for full-width CJK characters,
+ * narrow characters, wide characters, and font size.
+ */
+export function getTextWidth(text: string, fontSize: number = 13, fontFamily: string = 'sans-serif'): number {
+    if (!text) return 0;
+
+    const plainText = stripRichText(text);
+
+    if (typeof document !== 'undefined') {
+        try {
+            if (cachedCanvasCtx === undefined) {
+                const canvas = document.createElement('canvas');
+                cachedCanvasCtx = canvas.getContext('2d');
+            }
+            if (cachedCanvasCtx) {
+                cachedCanvasCtx.font = `${fontSize}px ${fontFamily}`;
+                return cachedCanvasCtx.measureText(plainText).width;
+            }
+        } catch {
+            // Ignore canvas error and fallback
+        }
+    }
+
+    // Heuristic fallback for non-DOM environments
+    let width = 0;
+    for (let i = 0; i < plainText.length; i++) {
+        const char = plainText[i];
+        const code = char.charCodeAt(0);
+
+        // Full-width / CJK / Japanese / Emoji
+        if (
+            (code >= 0x3000 && code <= 0x303f) || // CJK symbols & punctuation
+            (code >= 0x3040 && code <= 0x309f) || // Hiragana
+            (code >= 0x30a0 && code <= 0x30ff) || // Katakana
+            (code >= 0xff00 && code <= 0xffef) || // Fullwidth forms
+            (code >= 0x4e00 && code <= 0x9faf) || // CJK Ideographs
+            (code >= 0x3400 && code <= 0x4dbf) || // CJK Extension A
+            (code >= 0x1f300 && code <= 0x1f9ff)  // Emojis
+        ) {
+            width += fontSize * 1.05;
+        } else if ('iIl1t!.,:;\' "|()[]{}'.includes(char)) {
+            width += fontSize * 0.35;
+        } else if ('fjrskcxyzJ-'.includes(char)) {
+            width += fontSize * 0.45;
+        } else if ('mwMW@#%&'.includes(char)) {
+            width += fontSize * 0.85;
+        } else {
+            width += fontSize * 0.58;
+        }
+    }
+    return width;
+}
+
