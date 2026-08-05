@@ -177,6 +177,8 @@ interface Token {
         | 'EOF';
     value: string;
     checked?: boolean;
+    /** Widget is in disabled (grayed-out) state — set by ~ prefix syntax */
+    disabled?: boolean;
     style?: string;
     open?: boolean;
     items?: string[];
@@ -254,6 +256,37 @@ class SaltTokenizer {
 
             if (char === '<' && this.peekNext() === '<') {
                 tokens.push(this.scanSpriteRef());
+                continue;
+            }
+
+            // ~ prefix marks a widget as disabled (grayed-out / non-interactive).
+            // Syntax: ~[Button], ~() Radio, ~[] Checkbox, ~"input", ~^droplist^
+            // For plain text labels: ~Some text → disabled label
+            // NOTE: ~~ is the PlantUML strong-separator syntax and must NOT be treated
+            // as a disabled prefix — fall through to scanText in that case.
+            if (char === '~') {
+                const next = this.peekNext();
+                if (next === '~') {
+                    // ~~ separator — let scanText consume both characters normally
+                    tokens.push(this.scanText());
+                    continue;
+                }
+                this.advance(); // consume '~'
+                let tok: Token;
+                if (next === '[') {
+                    tok = this.scanBracket();
+                } else if (next === '(') {
+                    tok = this.scanRadio();
+                } else if (next === '"') {
+                    tok = this.scanInput();
+                } else if (next === '^') {
+                    tok = this.scanDroplist();
+                } else {
+                    // Disabled plain-text label
+                    tok = this.scanText();
+                }
+                tok.disabled = true;
+                tokens.push(tok);
                 continue;
             }
 
@@ -586,19 +619,29 @@ class SaltParserEngine {
         this.advance();
         
         if (token.type === 'BUTTON') {
-            return { type: 'button', label: token.value };
+            const w: import('./SaltDiagram').ButtonWidget = { type: 'button', label: token.value };
+            if (token.disabled) w.disabled = true;
+            return w;
         }
         if (token.type === 'CHECKBOX') {
-            return { type: 'checkbox', label: token.value, checked: token.checked || false };
+            const w: import('./SaltDiagram').CheckboxWidget = { type: 'checkbox', label: token.value, checked: token.checked || false };
+            if (token.disabled) w.disabled = true;
+            return w;
         }
         if (token.type === 'RADIO') {
-            return { type: 'radio', label: token.value, checked: token.checked || false };
+            const w: import('./SaltDiagram').RadioWidget = { type: 'radio', label: token.value, checked: token.checked || false };
+            if (token.disabled) w.disabled = true;
+            return w;
         }
         if (token.type === 'INPUT') {
-            return { type: 'input', label: token.value };
+            const w: import('./SaltDiagram').InputWidget = { type: 'input', label: token.value };
+            if (token.disabled) w.disabled = true;
+            return w;
         }
         if (token.type === 'DROPLIST') {
-            return { type: 'droplist', label: token.value, open: token.open || false, items: token.items };
+            const w: import('./SaltDiagram').DroplistWidget = { type: 'droplist', label: token.value, open: token.open || false, items: token.items };
+            if (token.disabled) w.disabled = true;
+            return w;
         }
         if (token.type === 'SPRITE_REF') {
             return { type: 'sprite', name: token.value };
@@ -620,6 +663,7 @@ class SaltParserEngine {
         const labelWidget: import('./SaltDiagram').LabelWidget = { type: 'label', text: textVal };
         if (token.minWidth !== undefined) labelWidget.minWidth = token.minWidth;
         if (token.minHeight !== undefined) labelWidget.minHeight = token.minHeight;
+        if (token.disabled) labelWidget.disabled = true;
         return labelWidget;
     }
 

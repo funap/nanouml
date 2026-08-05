@@ -2826,6 +2826,28 @@ saltDiagram {
   [Cancel] | [  OK   ]               |
 }
 @endsalt`
+            },
+            disabled_widgets: {
+                title: "Disabled Widgets (SnapUML Extension)",
+                code: `@startsalt
+' SnapUML Extension: prefix any widget with ~ to render it as disabled
+{
+  ' Buttons
+  [Submit]         | ~[Submit]
+  ' Checkboxes
+  [] Accept terms  | ~[] Accept terms
+  [X] Remember me  | ~[X] Remember me
+  ' Radios
+  () Option A      | ~() Option A
+  (X) Option B     | ~(X) Option B
+  ' Text inputs
+  "Enter email"    | ~"Enter email"
+  ' Droplists
+  ^Select country^ | ~^Select country^
+  ' Labels
+  Active text      | ~Disabled text
+}
+@endsalt`
             }
         };
 

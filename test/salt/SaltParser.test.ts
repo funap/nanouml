@@ -561,5 +561,123 @@ describe('Salt Diagram Parser & Renderer', () => {
         expect(svg).toContain('Age');
         expect(svg).toContain('Alice');
     });
+
+    it('should parse disabled widgets with ~ prefix', () => {
+        const input = `
+        @startsalt
+        {
+          [Active button]
+          ~[Disabled button]
+          () Active radio
+          ~() Disabled radio
+          [] Active checkbox
+          ~[] Disabled checkbox
+          [X] Checked active
+          ~[X] Checked disabled
+          "Active input"
+          ~"Disabled input"
+          ^Active droplist^
+          ~^Disabled droplist^
+          Active label
+          ~Disabled label
+        }
+        @endsalt
+        `;
+        const parser = new SaltParser();
+        const diagram = parser.parse(input);
+        const grid = diagram.root as any;
+
+        // Active button — no disabled flag
+        expect(grid.rows[0][0].type).toBe('button');
+        expect(grid.rows[0][0].label).toBe('Active button');
+        expect(grid.rows[0][0].disabled).toBeUndefined();
+
+        // Disabled button
+        expect(grid.rows[1][0].type).toBe('button');
+        expect(grid.rows[1][0].label).toBe('Disabled button');
+        expect(grid.rows[1][0].disabled).toBe(true);
+
+        // Active radio
+        expect(grid.rows[2][0].type).toBe('radio');
+        expect(grid.rows[2][0].disabled).toBeUndefined();
+
+        // Disabled radio
+        expect(grid.rows[3][0].type).toBe('radio');
+        expect(grid.rows[3][0].label).toBe('Disabled radio');
+        expect(grid.rows[3][0].disabled).toBe(true);
+
+        // Active checkbox
+        expect(grid.rows[4][0].type).toBe('checkbox');
+        expect(grid.rows[4][0].checked).toBe(false);
+        expect(grid.rows[4][0].disabled).toBeUndefined();
+
+        // Disabled unchecked checkbox
+        expect(grid.rows[5][0].type).toBe('checkbox');
+        expect(grid.rows[5][0].label).toBe('Disabled checkbox');
+        expect(grid.rows[5][0].checked).toBe(false);
+        expect(grid.rows[5][0].disabled).toBe(true);
+
+        // Active checked checkbox
+        expect(grid.rows[6][0].type).toBe('checkbox');
+        expect(grid.rows[6][0].checked).toBe(true);
+        expect(grid.rows[6][0].disabled).toBeUndefined();
+
+        // Disabled checked checkbox
+        expect(grid.rows[7][0].type).toBe('checkbox');
+        expect(grid.rows[7][0].checked).toBe(true);
+        expect(grid.rows[7][0].disabled).toBe(true);
+
+        // Active input
+        expect(grid.rows[8][0].type).toBe('input');
+        expect(grid.rows[8][0].disabled).toBeUndefined();
+
+        // Disabled input
+        expect(grid.rows[9][0].type).toBe('input');
+        expect(grid.rows[9][0].label).toBe('Disabled input');
+        expect(grid.rows[9][0].disabled).toBe(true);
+
+        // Active droplist
+        expect(grid.rows[10][0].type).toBe('droplist');
+        expect(grid.rows[10][0].disabled).toBeUndefined();
+
+        // Disabled droplist
+        expect(grid.rows[11][0].type).toBe('droplist');
+        expect(grid.rows[11][0].label).toBe('Disabled droplist');
+        expect(grid.rows[11][0].disabled).toBe(true);
+
+        // Active label
+        expect(grid.rows[12][0].type).toBe('label');
+        expect(grid.rows[12][0].disabled).toBeUndefined();
+
+        // Disabled label
+        expect(grid.rows[13][0].type).toBe('label');
+        expect(grid.rows[13][0].text).toBe('Disabled label');
+        expect(grid.rows[13][0].disabled).toBe(true);
+    });
+
+    it('should render disabled widgets with gray colors in SVG', () => {
+        const input = `
+        @startsalt
+        {
+          ~[Disabled button]
+          ~[X] Disabled checked checkbox
+          ~(X) Disabled checked radio
+          ~"Disabled input"
+          ~^Disabled droplist^
+          ~Disabled label
+        }
+        @endsalt
+        `;
+        const svg = render(input);
+        expect(svg).toContain('<svg');
+
+        // Disabled button: flat gray background, no gradient
+        expect(svg).toContain('#f3f4f6');
+        // Disabled text color
+        expect(svg).toContain('#9ca3af');
+        // Should NOT use the blue accent color for disabled checked states
+        // (checked radio/checkbox in disabled mode uses #d1d5db instead of #2563eb)
+        expect(svg).toContain('#d1d5db');
+    });
 });
 

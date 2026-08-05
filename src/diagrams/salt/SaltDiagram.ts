@@ -20,6 +20,7 @@ export type LineStyle = 'none' | 'all' | 'vertical' | 'horizontal' | 'external';
 
 export interface BaseWidget {
     type: WidgetType;
+    disabled?: boolean;
     width?: number;
     height?: number;
     minWidth?: number;

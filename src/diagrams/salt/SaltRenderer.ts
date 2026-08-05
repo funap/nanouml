@@ -265,72 +265,105 @@ export class SaltRenderer implements Renderer {
             case 'label': {
                 const label = widget as LabelWidget;
                 if (label.text === '*' || label.text === '.') break;
-                svg += renderTextWithIcons(label.text, x + 2, y, '#1f2937', this.fontFamily, 12, 'left', h);
+                const labelColor = label.disabled ? '#9ca3af' : '#1f2937';
+                svg += renderTextWithIcons(label.text, x + 2, y, labelColor, this.fontFamily, 12, 'left', h);
                 break;
             }
             case 'button': {
                 const btn = widget as ButtonWidget;
-                svg += `  <g filter="url(#subtle-shadow)">\n`;
-                svg += `    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" ry="4" fill="url(#btn-grad)" stroke="#d1d5db" stroke-width="1.2" />\n`;
-                svg += `  </g>\n`;
-                svg += `  <defs>\n`;
-                svg += `    <linearGradient id="btn-grad" x1="0" y1="0" x2="0" y2="1">\n`;
-                svg += `      <stop offset="0%" stop-color="#ffffff" />\n`;
-                svg += `      <stop offset="100%" stop-color="#f3f4f6" />\n`;
-                svg += `    </linearGradient>\n`;
-                svg += `  </defs>\n`;
-                svg += renderTextWithIcons(btn.label, x + w / 2, y, '#1f2937', this.fontFamily, 12, 'center', h);
+                if (btn.disabled) {
+                    svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" ry="4" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1.2" />\n`;
+                    svg += renderTextWithIcons(btn.label, x + w / 2, y, '#9ca3af', this.fontFamily, 12, 'center', h);
+                } else {
+                    svg += `  <g filter="url(#subtle-shadow)">\n`;
+                    svg += `    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" ry="4" fill="url(#btn-grad)" stroke="#d1d5db" stroke-width="1.2" />\n`;
+                    svg += `  </g>\n`;
+                    svg += `  <defs>\n`;
+                    svg += `    <linearGradient id="btn-grad" x1="0" y1="0" x2="0" y2="1">\n`;
+                    svg += `      <stop offset="0%" stop-color="#ffffff" />\n`;
+                    svg += `      <stop offset="100%" stop-color="#f3f4f6" />\n`;
+                    svg += `    </linearGradient>\n`;
+                    svg += `  </defs>\n`;
+                    svg += renderTextWithIcons(btn.label, x + w / 2, y, '#1f2937', this.fontFamily, 12, 'center', h);
+                }
                 break;
             }
             case 'checkbox': {
                 const cb = widget as CheckboxWidget;
                 const boxY = y + (h - 14) / 2;
-                svg += `  <rect x="${x}" y="${boxY}" width="14" height="14" rx="2" ry="2" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5" />\n`;
-                if (cb.checked) {
-                    svg += `  <path d="M ${x + 3.5},${boxY + 7} L ${x + 6},${boxY + 9.5} L ${x + 10.5},${boxY + 3.5}" stroke="#2563eb" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />\n`;
+                if (cb.disabled) {
+                    svg += `  <rect x="${x}" y="${boxY}" width="14" height="14" rx="2" ry="2" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1.5" />\n`;
+                    if (cb.checked) {
+                        svg += `  <path d="M ${x + 3.5},${boxY + 7} L ${x + 6},${boxY + 9.5} L ${x + 10.5},${boxY + 3.5}" stroke="#d1d5db" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />\n`;
+                    }
+                    svg += renderTextWithIcons(cb.label, x + 20, y, '#9ca3af', this.fontFamily, 12, 'left', h);
+                } else {
+                    svg += `  <rect x="${x}" y="${boxY}" width="14" height="14" rx="2" ry="2" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5" />\n`;
+                    if (cb.checked) {
+                        svg += `  <path d="M ${x + 3.5},${boxY + 7} L ${x + 6},${boxY + 9.5} L ${x + 10.5},${boxY + 3.5}" stroke="#2563eb" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />\n`;
+                    }
+                    svg += renderTextWithIcons(cb.label, x + 20, y, '#1f2937', this.fontFamily, 12, 'left', h);
                 }
-                svg += renderTextWithIcons(cb.label, x + 20, y, '#1f2937', this.fontFamily, 12, 'left', h);
                 break;
             }
             case 'radio': {
                 const rd = widget as RadioWidget;
                 const circleY = y + (h - 14) / 2 + 7;
-                svg += `  <circle cx="${x + 7}" cy="${circleY}" r="7" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5" />\n`;
-                if (rd.checked) {
-                    svg += `  <circle cx="${x + 7}" cy="${circleY}" r="3.5" fill="#2563eb" />\n`;
+                if (rd.disabled) {
+                    svg += `  <circle cx="${x + 7}" cy="${circleY}" r="7" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1.5" />\n`;
+                    if (rd.checked) {
+                        svg += `  <circle cx="${x + 7}" cy="${circleY}" r="3.5" fill="#d1d5db" />\n`;
+                    }
+                    svg += renderTextWithIcons(rd.label, x + 20, y, '#9ca3af', this.fontFamily, 12, 'left', h);
+                } else {
+                    svg += `  <circle cx="${x + 7}" cy="${circleY}" r="7" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5" />\n`;
+                    if (rd.checked) {
+                        svg += `  <circle cx="${x + 7}" cy="${circleY}" r="3.5" fill="#2563eb" />\n`;
+                    }
+                    svg += renderTextWithIcons(rd.label, x + 20, y, '#1f2937', this.fontFamily, 12, 'left', h);
                 }
-                svg += renderTextWithIcons(rd.label, x + 20, y, '#1f2937', this.fontFamily, 12, 'left', h);
                 break;
             }
             case 'input': {
                 const inp = widget as InputWidget;
-                svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#ffffff" stroke="#d1d5db" stroke-width="1.2" />\n`;
-                svg += renderTextWithIcons(inp.label, x + 8, y, '#374151', this.fontFamily, 12, 'left', h);
+                if (inp.disabled) {
+                    svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1.2" />\n`;
+                    svg += renderTextWithIcons(inp.label, x + 8, y, '#9ca3af', this.fontFamily, 12, 'left', h);
+                } else {
+                    svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#ffffff" stroke="#d1d5db" stroke-width="1.2" />\n`;
+                    svg += renderTextWithIcons(inp.label, x + 8, y, '#374151', this.fontFamily, 12, 'left', h);
+                }
                 break;
             }
             case 'droplist': {
                 const dl = widget as DroplistWidget;
-                svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#ffffff" stroke="#d1d5db" stroke-width="1.2" />\n`;
-                svg += `  <path d="M ${x + w - 16},${y + h / 2 - 2} L ${x + w - 10},${y + h / 2 + 3} L ${x + w - 4},${y + h / 2 - 2}" stroke="#4b5563" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />\n`;
-                svg += renderTextWithIcons(dl.label, x + 8, y, '#1f2937', this.fontFamily, 12, 'left', h);
+                if (dl.disabled) {
+                    svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1.2" />\n`;
+                    svg += `  <path d="M ${x + w - 16},${y + h / 2 - 2} L ${x + w - 10},${y + h / 2 + 3} L ${x + w - 4},${y + h / 2 - 2}" stroke="#d1d5db" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />\n`;
+                    svg += renderTextWithIcons(dl.label, x + 8, y, '#9ca3af', this.fontFamily, 12, 'left', h);
+                } else {
+                    svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#ffffff" stroke="#d1d5db" stroke-width="1.2" />\n`;
+                    svg += `  <path d="M ${x + w - 16},${y + h / 2 - 2} L ${x + w - 10},${y + h / 2 + 3} L ${x + w - 4},${y + h / 2 - 2}" stroke="#4b5563" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />\n`;
+                    svg += renderTextWithIcons(dl.label, x + 8, y, '#1f2937', this.fontFamily, 12, 'left', h);
 
-                if (dl.open && dl.items && dl.items.length > 0) {
-                    const itemH = 20;
-                    const ddH = dl.items.length * itemH + 8;
-                    let ddSvg = '';
-                    ddSvg += `  <g filter="url(#dropdown-shadow)">\n`;
-                    ddSvg += `    <rect x="${x}" y="${y + h}" width="${w}" height="${ddH}" rx="4" ry="4" fill="#ffffff" stroke="#d1d5db" stroke-width="1" />\n`;
-                    ddSvg += `  </g>\n`;
-                    
-                    dl.items.forEach((item, idx) => {
-                        const itemY = y + h + 4 + idx * itemH;
-                        // Draw highlight for the first item as hovered
-                        if (idx === 0) {
-                            ddSvg += `    <rect x="${x + 2}" y="${itemY}" width="${w - 4}" height="${itemH}" fill="#eff6ff" rx="2" />\n`;
-                        }
-                        ddSvg += renderTextWithIcons(item, x + 8, itemY, '#1f2937', this.fontFamily, 12, 'left', itemH);
-                    });
-                    this.overlays.push(ddSvg);
+                    if (dl.open && dl.items && dl.items.length > 0) {
+                        const itemH = 20;
+                        const ddH = dl.items.length * itemH + 8;
+                        let ddSvg = '';
+                        ddSvg += `  <g filter="url(#dropdown-shadow)">\n`;
+                        ddSvg += `    <rect x="${x}" y="${y + h}" width="${w}" height="${ddH}" rx="4" ry="4" fill="#ffffff" stroke="#d1d5db" stroke-width="1" />\n`;
+                        ddSvg += `  </g>\n`;
+                        
+                        dl.items.forEach((item, idx) => {
+                            const itemY = y + h + 4 + idx * itemH;
+                            // Draw highlight for the first item as hovered
+                            if (idx === 0) {
+                                ddSvg += `    <rect x="${x + 2}" y="${itemY}" width="${w - 4}" height="${itemH}" fill="#eff6ff" rx="2" />\n`;
+                            }
+                            ddSvg += renderTextWithIcons(item, x + 8, itemY, '#1f2937', this.fontFamily, 12, 'left', itemH);
+                        });
+                        this.overlays.push(ddSvg);
+                    }
                 }
                 break;
             }
