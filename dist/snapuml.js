@@ -5421,9 +5421,10 @@ var snapuml = (() => {
       bodyLines.push(rawLine);
     }
     const processedBodyLines = [];
+    const separatorPattern = /^(\.\.|==|~~|--)(\s|$)/;
     for (let i = 0; i < bodyLines.length; i++) {
       let currentLine = bodyLines[i];
-      while (currentLine.trim().endsWith("|") && i + 1 < bodyLines.length) {
+      while (currentLine.trim().endsWith("|") && i + 1 < bodyLines.length && !separatorPattern.test(bodyLines[i + 1].trim())) {
         i++;
         currentLine += bodyLines[i];
       }
@@ -5512,7 +5513,32 @@ var snapuml = (() => {
         tokens.push(this.scanText());
       }
       tokens.push({ type: "EOF", value: "" });
-      return tokens;
+      return this.mergeLayoutHints(tokens);
+    }
+    /**
+     * Merge layout-hint-only TEXT tokens (value === '', minWidth/minHeight set) into
+     * the immediately following widget token.  This prevents phantom empty cells when
+     * a user writes e.g. <height:60>"input text" or <width:100>[Button] in a grid.
+     */
+    mergeLayoutHints(tokens) {
+      const result = [];
+      for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        if (tok.type === "TEXT" && tok.value === "" && (tok.minWidth !== void 0 || tok.minHeight !== void 0)) {
+          const next = tokens[i + 1];
+          if (next && next.type !== "NEWLINE" && next.type !== "PIPE" && next.type !== "RBRACE" && next.type !== "EOF") {
+            if (tok.minWidth !== void 0 && next.minWidth === void 0) {
+              next.minWidth = tok.minWidth;
+            }
+            if (tok.minHeight !== void 0 && next.minHeight === void 0) {
+              next.minHeight = tok.minHeight;
+            }
+            continue;
+          }
+        }
+        result.push(tok);
+      }
+      return result;
     }
     peek() {
       if (this.current >= this.source.length) return "\0";
@@ -5781,26 +5807,36 @@ var snapuml = (() => {
       if (token.type === "BUTTON") {
         const w = { type: "button", label: token.value };
         if (token.disabled) w.disabled = true;
+        if (token.minWidth !== void 0) w.minWidth = token.minWidth;
+        if (token.minHeight !== void 0) w.minHeight = token.minHeight;
         return w;
       }
       if (token.type === "CHECKBOX") {
         const w = { type: "checkbox", label: token.value, checked: token.checked || false };
         if (token.disabled) w.disabled = true;
+        if (token.minWidth !== void 0) w.minWidth = token.minWidth;
+        if (token.minHeight !== void 0) w.minHeight = token.minHeight;
         return w;
       }
       if (token.type === "RADIO") {
         const w = { type: "radio", label: token.value, checked: token.checked || false };
         if (token.disabled) w.disabled = true;
+        if (token.minWidth !== void 0) w.minWidth = token.minWidth;
+        if (token.minHeight !== void 0) w.minHeight = token.minHeight;
         return w;
       }
       if (token.type === "INPUT") {
         const w = { type: "input", label: token.value };
         if (token.disabled) w.disabled = true;
+        if (token.minWidth !== void 0) w.minWidth = token.minWidth;
+        if (token.minHeight !== void 0) w.minHeight = token.minHeight;
         return w;
       }
       if (token.type === "DROPLIST") {
         const w = { type: "droplist", label: token.value, open: token.open || false, items: token.items };
         if (token.disabled) w.disabled = true;
+        if (token.minWidth !== void 0) w.minWidth = token.minWidth;
+        if (token.minHeight !== void 0) w.minHeight = token.minHeight;
         return w;
       }
       if (token.type === "SPRITE_REF") {
