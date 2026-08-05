@@ -2810,6 +2810,44 @@ saltDiagram {
   [Cancel] | [  OK   ]
 }
 @endsalt`
+            },
+            layout_adjustment_extended: {
+                title: "Layout Adjustment (Extended)",
+                code: `@startsalt
+' SnapUML Extension: Use {#:W1,W2,...} to set minimum column widths (px)
+' Also use <width:N> or <height:N> to specify cell minimum sizes invisibly
+{#:120,180,100
+  Name     | "John Doe"              | <width:100>
+  --
+  Email    | "john.doe@example.com"  |
+  --
+  Comment  | <height:60>"Enter text" | <width:100>
+  --
+  [Cancel] | [  OK   ]               |
+}
+@endsalt`
+            },
+            disabled_widgets: {
+                title: "Disabled Widgets (SnapUML Extension)",
+                code: `@startsalt
+' SnapUML Extension: prefix any widget with ~ to render it as disabled
+{
+  ' Buttons
+  [Submit]         | ~[Submit]
+  ' Checkboxes
+  [] Accept terms  | ~[] Accept terms
+  [X] Remember me  | ~[X] Remember me
+  ' Radios
+  () Option A      | ~() Option A
+  (X) Option B     | ~(X) Option B
+  ' Text inputs
+  "Enter email"    | ~"Enter email"
+  ' Droplists
+  ^Select country^ | ~^Select country^
+  ' Labels
+  Active text      | ~Disabled text
+}
+@endsalt`
             }
         };
 

@@ -5402,6 +5402,29 @@ var SaltTokenizer = class {
         tokens.push(this.scanSpriteRef());
         continue;
       }
+      if (char === "~") {
+        const next = this.peekNext();
+        if (next === "~") {
+          tokens.push(this.scanText());
+          continue;
+        }
+        this.advance();
+        let tok;
+        if (next === "[") {
+          tok = this.scanBracket();
+        } else if (next === "(") {
+          tok = this.scanRadio();
+        } else if (next === '"') {
+          tok = this.scanInput();
+        } else if (next === "^") {
+          tok = this.scanDroplist();
+        } else {
+          tok = this.scanText();
+        }
+        tok.disabled = true;
+        tokens.push(tok);
+        continue;
+      }
       tokens.push(this.scanText());
     }
     tokens.push({ type: "EOF", value: "" });
@@ -5459,9 +5482,40 @@ var SaltTokenizer = class {
     }
     if (["+", "-", "!", "#"].includes(next)) {
       this.advance();
+      const styleChar = next;
+      if (this.peek() === ":") {
+        this.advance();
+        const columnWidths = this.scanColumnWidths();
+        return { type: "LBRACE_GRID", value: "{" + styleChar, style: styleChar, columnWidths };
+      }
       return { type: "LBRACE_GRID", value: "{" + next, style: next };
     }
+    if (next === ":") {
+      this.advance();
+      const columnWidths = this.scanColumnWidths();
+      return { type: "LBRACE_GRID", value: "{", style: "none", columnWidths };
+    }
     return { type: "LBRACE_GRID", value: "{", style: "none" };
+  }
+  /** Parse comma-separated column widths: "200,150,,80" -> [200, 150, undefined, 80] */
+  scanColumnWidths() {
+    const widths = [];
+    let current = "";
+    while (true) {
+      const c = this.peek();
+      if (c === " " || c === "	" || c === "\n" || c === "\r" || c === "\0") break;
+      if (c === ",") {
+        widths.push(current.trim() !== "" && current.trim() !== "*" ? parseInt(current.trim(), 10) || void 0 : void 0);
+        current = "";
+        this.advance();
+        continue;
+      }
+      current += this.advance();
+    }
+    if (current.trim() !== "" || widths.length > 0) {
+      widths.push(current.trim() !== "" && current.trim() !== "*" ? parseInt(current.trim(), 10) || void 0 : void 0);
+    }
+    return widths;
   }
   scanInput() {
     this.advance();
@@ -5573,7 +5627,13 @@ var SaltTokenizer = class {
       if (char === "<" && this.peekNext() === "<") break;
       value += this.advance();
     }
-    return { type: "TEXT", value: value.trim() };
+    const trimmed = value.trim();
+    const widthMatch = trimmed.match(/<width:(\d+)>/i);
+    const heightMatch = trimmed.match(/<height:(\d+)>/i);
+    const minWidth = widthMatch ? parseInt(widthMatch[1], 10) : void 0;
+    const minHeight = heightMatch ? parseInt(heightMatch[1], 10) : void 0;
+    const cleanValue = trimmed.replace(/<width:\d+>/gi, "").replace(/<height:\d+>/gi, "").trim();
+    return { type: "TEXT", value: cleanValue, minWidth, minHeight };
   }
 };
 function parseLineStyle(style) {
@@ -5635,19 +5695,29 @@ var SaltParserEngine = class {
     }
     this.advance();
     if (token.type === "BUTTON") {
-      return { type: "button", label: token.value };
+      const w = { type: "button", label: token.value };
+      if (token.disabled) w.disabled = true;
+      return w;
     }
     if (token.type === "CHECKBOX") {
-      return { type: "checkbox", label: token.value, checked: token.checked || false };
+      const w = { type: "checkbox", label: token.value, checked: token.checked || false };
+      if (token.disabled) w.disabled = true;
+      return w;
     }
     if (token.type === "RADIO") {
-      return { type: "radio", label: token.value, checked: token.checked || false };
+      const w = { type: "radio", label: token.value, checked: token.checked || false };
+      if (token.disabled) w.disabled = true;
+      return w;
     }
     if (token.type === "INPUT") {
-      return { type: "input", label: token.value };
+      const w = { type: "input", label: token.value };
+      if (token.disabled) w.disabled = true;
+      return w;
     }
     if (token.type === "DROPLIST") {
-      return { type: "droplist", label: token.value, open: token.open || false, items: token.items };
+      const w = { type: "droplist", label: token.value, open: token.open || false, items: token.items };
+      if (token.disabled) w.disabled = true;
+      return w;
     }
     if (token.type === "SPRITE_REF") {
       return { type: "sprite", name: token.value };
@@ -5664,7 +5734,11 @@ var SaltParserEngine = class {
       else if (symbol === "--") style = "single";
       return { type: "separator", style, title: title || void 0 };
     }
-    return { type: "label", text: textVal };
+    const labelWidget = { type: "label", text: textVal };
+    if (token.minWidth !== void 0) labelWidget.minWidth = token.minWidth;
+    if (token.minHeight !== void 0) labelWidget.minHeight = token.minHeight;
+    if (token.disabled) labelWidget.disabled = true;
+    return labelWidget;
   }
   parseGrid() {
     const startToken = this.advance();
@@ -5681,7 +5755,11 @@ var SaltParserEngine = class {
       };
     }
     const lineStyle = parseLineStyle(startToken.style);
-    return this.parseGridBody(lineStyle);
+    const grid = this.parseGridBody(lineStyle);
+    if (startToken.columnWidths && startToken.columnWidths.length > 0) {
+      grid.columnWidths = startToken.columnWidths;
+    }
+    return grid;
   }
   parseGridBody(lineStyle) {
     const rows = [];
@@ -6041,16 +6119,31 @@ function measureWidget(widget, sprites) {
       }
       const colWidths = new Array(maxCols).fill(0);
       const rowHeights = new Array(R).fill(0);
+      if (w.columnWidths) {
+        for (let c = 0; c < Math.min(w.columnWidths.length, maxCols); c++) {
+          if (w.columnWidths[c] !== void 0) {
+            colWidths[c] = Math.max(colWidths[c], w.columnWidths[c]);
+          }
+        }
+      }
       for (let r = 0; r < R; r++) {
         const isSeparatorRow = rows[r].length === 1 && rows[r][0].type === "separator";
         for (let c = 0; c < rows[r].length; c++) {
           const child = rows[r][c];
           if (!child) continue;
-          rowHeights[r] = Math.max(rowHeights[r], child.height || 0);
+          rowHeights[r] = Math.max(
+            rowHeights[r],
+            child.height || 0,
+            child.minHeight || 0
+          );
           if (!isSeparatorRow && child.type !== "separator") {
             if (child.type === "label" && (child.text === "*" || child.text === ".")) {
             } else {
-              colWidths[c] = Math.max(colWidths[c], child.width || 0);
+              colWidths[c] = Math.max(
+                colWidths[c],
+                child.width || 0,
+                child.minWidth || 0
+              );
             }
           }
         }
@@ -6174,16 +6267,31 @@ function layoutWidget(widget, x, y, width, height, sprites) {
       }
       const colWidths = new Array(maxCols).fill(0);
       const rowHeights = new Array(R).fill(0);
+      if (w.columnWidths) {
+        for (let c = 0; c < Math.min(w.columnWidths.length, maxCols); c++) {
+          if (w.columnWidths[c] !== void 0) {
+            colWidths[c] = Math.max(colWidths[c], w.columnWidths[c]);
+          }
+        }
+      }
       for (let r = 0; r < R; r++) {
         const isSeparatorRow = rows[r].length === 1 && rows[r][0].type === "separator";
         for (let c = 0; c < rows[r].length; c++) {
           const child = rows[r][c];
           if (!child) continue;
-          rowHeights[r] = Math.max(rowHeights[r], child.height || 0);
+          rowHeights[r] = Math.max(
+            rowHeights[r],
+            child.height || 0,
+            child.minHeight || 0
+          );
           if (!isSeparatorRow && child.type !== "separator") {
             if (child.type === "label" && (child.text === "*" || child.text === ".")) {
             } else {
-              colWidths[c] = Math.max(colWidths[c], child.width || 0);
+              colWidths[c] = Math.max(
+                colWidths[c],
+                child.width || 0,
+                child.minWidth || 0
+              );
             }
           }
         }
@@ -6520,89 +6628,130 @@ var SaltRenderer = class {
       case "label": {
         const label = widget;
         if (label.text === "*" || label.text === ".") break;
-        svg += renderTextWithIcons(label.text, x + 2, y, "#1f2937", this.fontFamily, 12, "left", h);
+        const labelColor = label.disabled ? "#9ca3af" : "#1f2937";
+        svg += renderTextWithIcons(label.text, x + 2, y, labelColor, this.fontFamily, 12, "left", h);
         break;
       }
       case "button": {
         const btn = widget;
-        svg += `  <g filter="url(#subtle-shadow)">
+        if (btn.disabled) {
+          svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" ry="4" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1.2" />
 `;
-        svg += `    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" ry="4" fill="url(#btn-grad)" stroke="#d1d5db" stroke-width="1.2" />
+          svg += renderTextWithIcons(btn.label, x + w / 2, y, "#9ca3af", this.fontFamily, 12, "center", h);
+        } else {
+          svg += `  <g filter="url(#subtle-shadow)">
 `;
-        svg += `  </g>
+          svg += `    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" ry="4" fill="url(#btn-grad)" stroke="#d1d5db" stroke-width="1.2" />
 `;
-        svg += `  <defs>
+          svg += `  </g>
 `;
-        svg += `    <linearGradient id="btn-grad" x1="0" y1="0" x2="0" y2="1">
+          svg += `  <defs>
 `;
-        svg += `      <stop offset="0%" stop-color="#ffffff" />
+          svg += `    <linearGradient id="btn-grad" x1="0" y1="0" x2="0" y2="1">
 `;
-        svg += `      <stop offset="100%" stop-color="#f3f4f6" />
+          svg += `      <stop offset="0%" stop-color="#ffffff" />
 `;
-        svg += `    </linearGradient>
+          svg += `      <stop offset="100%" stop-color="#f3f4f6" />
 `;
-        svg += `  </defs>
+          svg += `    </linearGradient>
 `;
-        svg += renderTextWithIcons(btn.label, x + w / 2, y, "#1f2937", this.fontFamily, 12, "center", h);
+          svg += `  </defs>
+`;
+          svg += renderTextWithIcons(btn.label, x + w / 2, y, "#1f2937", this.fontFamily, 12, "center", h);
+        }
         break;
       }
       case "checkbox": {
         const cb = widget;
         const boxY = y + (h - 14) / 2;
-        svg += `  <rect x="${x}" y="${boxY}" width="14" height="14" rx="2" ry="2" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5" />
+        if (cb.disabled) {
+          svg += `  <rect x="${x}" y="${boxY}" width="14" height="14" rx="2" ry="2" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1.5" />
 `;
-        if (cb.checked) {
-          svg += `  <path d="M ${x + 3.5},${boxY + 7} L ${x + 6},${boxY + 9.5} L ${x + 10.5},${boxY + 3.5}" stroke="#2563eb" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+          if (cb.checked) {
+            svg += `  <path d="M ${x + 3.5},${boxY + 7} L ${x + 6},${boxY + 9.5} L ${x + 10.5},${boxY + 3.5}" stroke="#d1d5db" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
 `;
+          }
+          svg += renderTextWithIcons(cb.label, x + 20, y, "#9ca3af", this.fontFamily, 12, "left", h);
+        } else {
+          svg += `  <rect x="${x}" y="${boxY}" width="14" height="14" rx="2" ry="2" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5" />
+`;
+          if (cb.checked) {
+            svg += `  <path d="M ${x + 3.5},${boxY + 7} L ${x + 6},${boxY + 9.5} L ${x + 10.5},${boxY + 3.5}" stroke="#2563eb" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+`;
+          }
+          svg += renderTextWithIcons(cb.label, x + 20, y, "#1f2937", this.fontFamily, 12, "left", h);
         }
-        svg += renderTextWithIcons(cb.label, x + 20, y, "#1f2937", this.fontFamily, 12, "left", h);
         break;
       }
       case "radio": {
         const rd = widget;
         const circleY = y + (h - 14) / 2 + 7;
-        svg += `  <circle cx="${x + 7}" cy="${circleY}" r="7" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5" />
+        if (rd.disabled) {
+          svg += `  <circle cx="${x + 7}" cy="${circleY}" r="7" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1.5" />
 `;
-        if (rd.checked) {
-          svg += `  <circle cx="${x + 7}" cy="${circleY}" r="3.5" fill="#2563eb" />
+          if (rd.checked) {
+            svg += `  <circle cx="${x + 7}" cy="${circleY}" r="3.5" fill="#d1d5db" />
 `;
+          }
+          svg += renderTextWithIcons(rd.label, x + 20, y, "#9ca3af", this.fontFamily, 12, "left", h);
+        } else {
+          svg += `  <circle cx="${x + 7}" cy="${circleY}" r="7" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5" />
+`;
+          if (rd.checked) {
+            svg += `  <circle cx="${x + 7}" cy="${circleY}" r="3.5" fill="#2563eb" />
+`;
+          }
+          svg += renderTextWithIcons(rd.label, x + 20, y, "#1f2937", this.fontFamily, 12, "left", h);
         }
-        svg += renderTextWithIcons(rd.label, x + 20, y, "#1f2937", this.fontFamily, 12, "left", h);
         break;
       }
       case "input": {
         const inp = widget;
-        svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#ffffff" stroke="#d1d5db" stroke-width="1.2" />
+        if (inp.disabled) {
+          svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1.2" />
 `;
-        svg += renderTextWithIcons(inp.label, x + 8, y, "#374151", this.fontFamily, 12, "left", h);
+          svg += renderTextWithIcons(inp.label, x + 8, y, "#9ca3af", this.fontFamily, 12, "left", h);
+        } else {
+          svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#ffffff" stroke="#d1d5db" stroke-width="1.2" />
+`;
+          svg += renderTextWithIcons(inp.label, x + 8, y, "#374151", this.fontFamily, 12, "left", h);
+        }
         break;
       }
       case "droplist": {
         const dl = widget;
-        svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#ffffff" stroke="#d1d5db" stroke-width="1.2" />
+        if (dl.disabled) {
+          svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1.2" />
 `;
-        svg += `  <path d="M ${x + w - 16},${y + h / 2 - 2} L ${x + w - 10},${y + h / 2 + 3} L ${x + w - 4},${y + h / 2 - 2}" stroke="#4b5563" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+          svg += `  <path d="M ${x + w - 16},${y + h / 2 - 2} L ${x + w - 10},${y + h / 2 + 3} L ${x + w - 4},${y + h / 2 - 2}" stroke="#d1d5db" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
 `;
-        svg += renderTextWithIcons(dl.label, x + 8, y, "#1f2937", this.fontFamily, 12, "left", h);
-        if (dl.open && dl.items && dl.items.length > 0) {
-          const itemH = 20;
-          const ddH = dl.items.length * itemH + 8;
-          let ddSvg = "";
-          ddSvg += `  <g filter="url(#dropdown-shadow)">
+          svg += renderTextWithIcons(dl.label, x + 8, y, "#9ca3af", this.fontFamily, 12, "left", h);
+        } else {
+          svg += `  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ry="3" fill="#ffffff" stroke="#d1d5db" stroke-width="1.2" />
 `;
-          ddSvg += `    <rect x="${x}" y="${y + h}" width="${w}" height="${ddH}" rx="4" ry="4" fill="#ffffff" stroke="#d1d5db" stroke-width="1" />
+          svg += `  <path d="M ${x + w - 16},${y + h / 2 - 2} L ${x + w - 10},${y + h / 2 + 3} L ${x + w - 4},${y + h / 2 - 2}" stroke="#4b5563" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
 `;
-          ddSvg += `  </g>
+          svg += renderTextWithIcons(dl.label, x + 8, y, "#1f2937", this.fontFamily, 12, "left", h);
+          if (dl.open && dl.items && dl.items.length > 0) {
+            const itemH = 20;
+            const ddH = dl.items.length * itemH + 8;
+            let ddSvg = "";
+            ddSvg += `  <g filter="url(#dropdown-shadow)">
 `;
-          dl.items.forEach((item, idx) => {
-            const itemY = y + h + 4 + idx * itemH;
-            if (idx === 0) {
-              ddSvg += `    <rect x="${x + 2}" y="${itemY}" width="${w - 4}" height="${itemH}" fill="#eff6ff" rx="2" />
+            ddSvg += `    <rect x="${x}" y="${y + h}" width="${w}" height="${ddH}" rx="4" ry="4" fill="#ffffff" stroke="#d1d5db" stroke-width="1" />
 `;
-            }
-            ddSvg += renderTextWithIcons(item, x + 8, itemY, "#1f2937", this.fontFamily, 12, "left", itemH);
-          });
-          this.overlays.push(ddSvg);
+            ddSvg += `  </g>
+`;
+            dl.items.forEach((item, idx) => {
+              const itemY = y + h + 4 + idx * itemH;
+              if (idx === 0) {
+                ddSvg += `    <rect x="${x + 2}" y="${itemY}" width="${w - 4}" height="${itemH}" fill="#eff6ff" rx="2" />
+`;
+              }
+              ddSvg += renderTextWithIcons(item, x + 8, itemY, "#1f2937", this.fontFamily, 12, "left", itemH);
+            });
+            this.overlays.push(ddSvg);
+          }
         }
         break;
       }
