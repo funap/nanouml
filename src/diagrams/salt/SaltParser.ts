@@ -145,9 +145,15 @@ export function preprocessSalt(content: string, diagram: SaltDiagram): string {
     }
 
     const processedBodyLines: string[] = [];
+    // Separator patterns that must NOT be joined onto the previous line even if it ends with '|'
+    const separatorPattern = /^(\.\.|==|~~|--)(\s|$)/;
     for (let i = 0; i < bodyLines.length; i++) {
         let currentLine = bodyLines[i];
-        while (currentLine.trim().endsWith('|') && i + 1 < bodyLines.length) {
+        while (
+            currentLine.trim().endsWith('|') &&
+            i + 1 < bodyLines.length &&
+            !separatorPattern.test(bodyLines[i + 1].trim())
+        ) {
             i++;
             currentLine += bodyLines[i];
         }
@@ -293,7 +299,50 @@ class SaltTokenizer {
             tokens.push(this.scanText());
         }
         tokens.push({ type: 'EOF', value: '' });
-        return tokens;
+
+        // Post-process: if a TEXT token with no visible text (only layout hints like
+        // <width:N> or <height:N>) is immediately followed by a widget token, merge
+        // the layout hints into the widget token and discard the empty TEXT token.
+        // This fixes cases like <height:60>"Enter text" being tokenized as two tokens.
+        return this.mergeLayoutHints(tokens);
+    }
+
+    /**
+     * Merge layout-hint-only TEXT tokens (value === '', minWidth/minHeight set) into
+     * the immediately following widget token.  This prevents phantom empty cells when
+     * a user writes e.g. <height:60>"input text" or <width:100>[Button] in a grid.
+     */
+    private mergeLayoutHints(tokens: Token[]): Token[] {
+        const result: Token[] = [];
+        for (let i = 0; i < tokens.length; i++) {
+            const tok = tokens[i];
+            // Detect an empty layout-hint TEXT token
+            if (
+                tok.type === 'TEXT' &&
+                tok.value === '' &&
+                (tok.minWidth !== undefined || tok.minHeight !== undefined)
+            ) {
+                const next = tokens[i + 1];
+                if (
+                    next &&
+                    next.type !== 'NEWLINE' &&
+                    next.type !== 'PIPE' &&
+                    next.type !== 'RBRACE' &&
+                    next.type !== 'EOF'
+                ) {
+                    // Transfer hints to the next widget token and skip this empty TEXT
+                    if (tok.minWidth !== undefined && next.minWidth === undefined) {
+                        next.minWidth = tok.minWidth;
+                    }
+                    if (tok.minHeight !== undefined && next.minHeight === undefined) {
+                        next.minHeight = tok.minHeight;
+                    }
+                    continue; // discard the empty TEXT token
+                }
+            }
+            result.push(tok);
+        }
+        return result;
     }
 
     private peek(): string {
@@ -621,26 +670,36 @@ class SaltParserEngine {
         if (token.type === 'BUTTON') {
             const w: import('./SaltDiagram').ButtonWidget = { type: 'button', label: token.value };
             if (token.disabled) w.disabled = true;
+            if (token.minWidth !== undefined) w.minWidth = token.minWidth;
+            if (token.minHeight !== undefined) w.minHeight = token.minHeight;
             return w;
         }
         if (token.type === 'CHECKBOX') {
             const w: import('./SaltDiagram').CheckboxWidget = { type: 'checkbox', label: token.value, checked: token.checked || false };
             if (token.disabled) w.disabled = true;
+            if (token.minWidth !== undefined) w.minWidth = token.minWidth;
+            if (token.minHeight !== undefined) w.minHeight = token.minHeight;
             return w;
         }
         if (token.type === 'RADIO') {
             const w: import('./SaltDiagram').RadioWidget = { type: 'radio', label: token.value, checked: token.checked || false };
             if (token.disabled) w.disabled = true;
+            if (token.minWidth !== undefined) w.minWidth = token.minWidth;
+            if (token.minHeight !== undefined) w.minHeight = token.minHeight;
             return w;
         }
         if (token.type === 'INPUT') {
             const w: import('./SaltDiagram').InputWidget = { type: 'input', label: token.value };
             if (token.disabled) w.disabled = true;
+            if (token.minWidth !== undefined) w.minWidth = token.minWidth;
+            if (token.minHeight !== undefined) w.minHeight = token.minHeight;
             return w;
         }
         if (token.type === 'DROPLIST') {
             const w: import('./SaltDiagram').DroplistWidget = { type: 'droplist', label: token.value, open: token.open || false, items: token.items };
             if (token.disabled) w.disabled = true;
+            if (token.minWidth !== undefined) w.minWidth = token.minWidth;
+            if (token.minHeight !== undefined) w.minHeight = token.minHeight;
             return w;
         }
         if (token.type === 'SPRITE_REF') {

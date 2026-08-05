@@ -679,5 +679,101 @@ describe('Salt Diagram Parser & Renderer', () => {
         // (checked radio/checkbox in disabled mode uses #d1d5db instead of #2563eb)
         expect(svg).toContain('#d1d5db');
     });
-});
 
+    it('should treat <height:N>"input" as a single cell (not two cells)', () => {
+        // Regression: <height:N> immediately before a widget like "input", [Button],
+        // (X) Radio etc. was being tokenized as an empty TEXT token + a widget token,
+        // causing the grid parser to create a phantom empty cell and producing a
+        // 4-column table instead of a 3-column table.
+        const input = `
+        @startsalt
+        {#:120,180,100
+          Name     | "John Doe"              | <width:100>
+          --
+          Email    | "john.doe@example.com"  |
+          --
+          Comment  | <height:60>"Enter text" | <width:100>
+          --
+          [Cancel] | [  OK   ]               |
+        }
+        @endsalt
+        `;
+        const parser = new SaltParser();
+        const diagram = parser.parse(input);
+        const grid = diagram.root as any;
+
+        // Find the "Comment" row (row index 4 after separators are counted)
+        // Row layout: 0=Name, 1=sep, 2=Email, 3=sep, 4=Comment, 5=sep, 6=Buttons
+        const commentRow = grid.rows.find((row: any[]) =>
+            row.some((cell: any) => cell.type === 'label' && cell.text === 'Comment')
+        );
+        expect(commentRow).toBeDefined();
+
+        // Must have exactly 3 cells (Name label | input | empty/width-hint cell)
+        expect(commentRow!.length).toBe(3);
+
+        // The second cell must be an input widget (not an empty label)
+        const inputCell = commentRow![1];
+        expect(inputCell.type).toBe('input');
+        expect(inputCell.label).toBe('Enter text');
+
+        // The input widget must carry the minHeight hint
+        expect(inputCell.minHeight).toBe(60);
+    });
+
+    it('should apply <width:N> hint before [Button] without phantom cell', () => {
+        const input = `
+        @startsalt
+        {
+          <width:100>[Click Me]
+        }
+        @endsalt
+        `;
+        const parser = new SaltParser();
+        const diagram = parser.parse(input);
+        const grid = diagram.root as any;
+
+        expect(grid.rows.length).toBe(1);
+        expect(grid.rows[0].length).toBe(1);
+        expect(grid.rows[0][0].type).toBe('button');
+        expect(grid.rows[0][0].label).toBe('Click Me');
+        expect(grid.rows[0][0].minWidth).toBe(100);
+    });
+
+    it('should NOT swallow a -- separator into the previous row when that row ends with |', () => {
+        // Regression: preprocessSalt was joining lines that end with '|' to the next line,
+        // so "Email | ... |" followed by "--" was merged into one line, placing the "--"
+        // separator as a 3rd cell inside the Email row instead of a separate separator row.
+        const input = `
+        @startsalt
+        {#:120,180,100
+          Name     | "John Doe"              | <width:100>
+          --
+          Email    | "john.doe@example.com"  |
+          --
+          Comment  | <height:60>"Enter text" | <width:100>
+          --
+          [Cancel] | [  OK   ]               |
+        }
+        @endsalt
+        `;
+        const parser = new SaltParser();
+        const diagram = parser.parse(input);
+        const grid = diagram.root as any;
+
+        // Expected row structure: Name, sep, Email, sep, Comment, sep, Buttons = 7 rows
+        expect(grid.rows.length).toBe(7);
+
+        // Row 2 is the Email row — must have exactly 2 cells (label + input), NOT 3
+        const emailRow = grid.rows[2];
+        expect(emailRow.length).toBe(2);
+        expect(emailRow[0].type).toBe('label');
+        expect(emailRow[0].text).toBe('Email');
+        expect(emailRow[1].type).toBe('input');
+
+        // Row 3 must be an independent separator row
+        const sepRow = grid.rows[3];
+        expect(sepRow.length).toBe(1);
+        expect(sepRow[0].type).toBe('separator');
+    });
+});
